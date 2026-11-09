@@ -6,6 +6,9 @@
     2. Writes dist\latest.json (version, download link, SHA-256, size, notes)
     3. Signs it with the release key -> dist\latest.json.sig
     4. Creates the GitHub release vX.Y.Z with those three files (needs the GitHub CLI, signed in)
+    5. With -Winget: opens a pull request on microsoft/winget-pkgs updating VictorGordan.StandMate to this
+       version (needs wingetcreate; only for versions after the package was first accepted into winget).
+       Each PR is approved by a human moderator, so use it for releases worth their time, not every tiny fix.
 
     Before releasing: bump <Version> in src\StandMate\StandMate.csproj.
       - Patch/minor (1.2.0 -> 1.2.1 / 1.3.0): updating keeps everyone's running timer.
@@ -22,6 +25,7 @@ param(
     [string]$Notes = '',
     [switch]$SkipBuild,
     [switch]$Local,
+    [switch]$Winget,
     [string]$BaseUrl = '',
     [string]$KeyPath = (Join-Path $env:USERPROFILE '.standmate\release-key.xml')
 )
@@ -93,3 +97,22 @@ $notesFile = Join-Path $env:TEMP 'standmate-release-notes.txt'
     --repo $repo --title "StandMate $version" --notes-file $notesFile
 if ($LASTEXITCODE -ne 0) { throw 'gh release create failed.' }
 Write-Host "Published https://github.com/$repo/releases/tag/v$version"
+
+if (-not $Winget) { return }
+
+# winget: wingetcreate reads the existing VictorGordan.StandMate manifest, swaps in this version's installer
+# (downloading it to recompute the hash), validates the result and opens the pull request from your fork.
+if (-not (Get-Command wingetcreate -ErrorAction SilentlyContinue)) {
+    throw 'wingetcreate is needed for -Winget: winget install Microsoft.WingetCreate'
+}
+$env:WINGET_CREATE_GITHUB_TOKEN = (& gh auth token)   # this process only; never on the command line
+try {
+    & wingetcreate update 'VictorGordan.StandMate' --version $version `
+        --urls "https://github.com/$repo/releases/download/v$version/StandMate-Setup.exe" `
+        --release-notes-url "https://github.com/$repo/releases/tag/v$version" `
+        --release-date (Get-Date -Format 'yyyy-MM-dd') `
+        --prtitle "Update: VictorGordan.StandMate to $version" --submit
+    if ($LASTEXITCODE -ne 0) { throw 'wingetcreate update failed; the GitHub release is published, winget was not updated.' }
+} finally {
+    Remove-Item Env:\WINGET_CREATE_GITHUB_TOKEN -ErrorAction SilentlyContinue
+}

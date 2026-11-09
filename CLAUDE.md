@@ -35,6 +35,21 @@ number and the release notes with the user first.
      always contain all three files.
 5. **Tell the user** the release URL.
 
+### winget (package `VictorGordan.StandMate`)
+- Ask the user whether a release should go to winget. Every winget PR is approved by a human moderator, and the user
+  doesn't want to spend their time on trivial releases. If yes, add `-Winget` to the `release.ps1` call. It runs
+  `wingetcreate update ... --submit` with the `gh` token passed through `WINGET_CREATE_GITHUB_TOKEN` (never `--token`,
+  which can end up in logs).
+- Follow microsoft/winget-pkgs' own rules (`AGENTS.md`, `CONTRIBUTING.md`, `doc/FirstContribution.md`):
+  - one package version per PR, manifest files only;
+  - check that no open PR exists for the same version;
+  - `winget validate --manifest <dir>` and a real `winget install --manifest <dir>` before submitting by hand;
+  - never recursively search their `manifests/` folder.
+- If a winget validation check fails on a PR, read `doc/ValidationFailureGuide.md` there and fix it promptly. Don't
+  leave a failing PR for moderators.
+- The installer's publisher ("Victor Gordan") and display name ("StandMate") must keep matching the manifest's
+  `Publisher` and `PackageName`. Don't change the Inno `AppId`.
+
 ### Testing an update locally (no GitHub)
 1. Build a throwaway newer version. Temporarily bump `<Version>` and restore it afterwards. Edit the csproj without
    adding a UTF-8 BOM, which PowerShell 5.1's `Set-Content -Encoding utf8` adds.
