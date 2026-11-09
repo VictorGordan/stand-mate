@@ -43,8 +43,12 @@ if (-not $Local) {
     if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
         throw 'The GitHub CLI is needed: winget install GitHub.cli, then: gh auth login'
     }
+    # "release not found" on stderr is the expected answer here; with 'Stop', Windows PowerShell would treat it as fatal.
+    $ErrorActionPreference = 'Continue'
     & gh release view "v$version" --repo $repo *> $null
-    if ($LASTEXITCODE -eq 0) { throw "Release v$version already exists. Bump <Version> in the csproj first." }
+    $exists = ($LASTEXITCODE -eq 0)
+    $ErrorActionPreference = 'Stop'
+    if ($exists) { throw "Release v$version already exists. Bump <Version> in the csproj first." }
     $BaseUrl = "https://github.com/$repo/releases/download/v$version"
 } elseif (-not $BaseUrl) {
     throw '-Local needs -BaseUrl (e.g. http://127.0.0.1:8765).'
