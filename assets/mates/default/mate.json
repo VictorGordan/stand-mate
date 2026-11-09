@@ -1,0 +1,5 @@
+{
+  "name": "Default-chan",
+  "stand": { "image": "stand.gif", "sound": "stand.wav", "caption": "Stand up and stretch!" },
+  "sit": { "image": "sit.gif", "sound": "sit.wav", "caption": "Take a seat..." }
+}

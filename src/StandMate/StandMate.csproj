@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- .NET Framework 4.8 ships with Windows 10/11: nothing extra to install, tiny exe, low RAM. -->
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>StandMate</AssemblyName>
+    <RootNamespace>StandMate</RootNamespace>
+    <ApplicationIcon>..\..\assets\icon\standmate.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>1.2.1</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <Product>StandMate</Product>
+    <Description>Reminds you to switch between sitting and standing.</Description>
+    <Copyright>StandMate</Copyright>
+    <DebugType>embedded</DebugType>
+    <GenerateResourceUsePreserializedResources>false</GenerateResourceUsePreserializedResources>
+    <!-- GitHub "owner/repo" whose releases the in-app updater reads. The placeholder disables updates. -->
+    <UpdateRepo>OWNER/stand-mate</UpdateRepo>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="UpdateRepo" Value="$(UpdateRepo)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Runtime.Serialization" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Bundled default mates: copied next to the exe as mates\<id>\... (each seeded into %APPDATA% once). -->
+    <None Include="..\..\assets\mates\**\*" Link="mates\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
