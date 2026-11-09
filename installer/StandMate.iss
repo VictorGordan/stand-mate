@@ -3,8 +3,11 @@
 
 #define AppName "StandMate"
 #ifndef AppVersion
-  #define AppVersion "1.2.1"
+  #define AppVersion "1.2.2"
 #endif
+; Shown in Settings > Apps; winget's validation compares these with the package manifest.
+#define AppPublisher "Victor Gordan"
+#define AppUrl "https://github.com/VictorGordan/stand-mate"
 #define AppExe "StandMate.exe"
 #define AppSource "..\build\app"
 
@@ -13,7 +16,10 @@ AppId={{6F3C2B1A-8E4D-4C5B-9A7E-2D1F0B3C4A5E}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
-AppPublisher={#AppName}
+AppPublisher={#AppPublisher}
+AppPublisherURL={#AppUrl}
+AppSupportURL={#AppUrl}/issues
+AppUpdatesURL={#AppUrl}/releases
 DefaultDirName={localappdata}\Programs\{#AppName}
 DisableProgramGroupPage=yes
 DisableDirPage=auto
