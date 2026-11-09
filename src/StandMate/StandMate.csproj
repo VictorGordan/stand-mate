@@ -18,8 +18,8 @@
     <Copyright>StandMate</Copyright>
     <DebugType>embedded</DebugType>
     <GenerateResourceUsePreserializedResources>false</GenerateResourceUsePreserializedResources>
-    <!-- GitHub "owner/repo" whose releases the in-app updater reads. The placeholder disables updates. -->
-    <UpdateRepo>OWNER/stand-mate</UpdateRepo>
+    <!-- GitHub "owner/repo" whose releases the in-app updater reads ("OWNER/stand-mate" disables updates). -->
+    <UpdateRepo>VictorGordan/stand-mate</UpdateRepo>
   </PropertyGroup>
 
   <ItemGroup>
