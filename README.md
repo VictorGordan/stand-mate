@@ -137,6 +137,14 @@ installer/               Inno Setup script
 tools/                   release key generator, icon generator
 ```
 
+## License
+
+- **Code:** [GNU General Public License v3.0](LICENSE). You may use, modify and share it, but versions you distribute
+  must stay open source under the same license.
+- **Default mate art:** © Victor Gordan, [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/). Free to
+  share and adapt with credit, but not for commercial use.
+- **Sounds:** Kenney, CC0 (public domain).
+
 ## Credits
 
 See [CREDITS.md](CREDITS.md).

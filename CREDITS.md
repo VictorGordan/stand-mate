@@ -12,7 +12,10 @@ released under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) (WA
 
 ## Art
 
-The default mate's art is made by me (Victor Gordan).
+The default mate's art (`assets/mates/default/`, except the sounds above) is made by me (Victor Gordan) and is
+licensed under [Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)](https://creativecommons.org/licenses/by-nc/4.0/):
+you may share and adapt it with credit to Victor Gordan, but not for commercial purposes. The GPL-3.0 license of the
+code does not apply to the art.
 
 ## Icon
 

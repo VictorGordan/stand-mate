@@ -15,7 +15,7 @@
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Product>StandMate</Product>
     <Description>Reminds you to switch between sitting and standing.</Description>
-    <Copyright>StandMate</Copyright>
+    <Copyright>Copyright (C) 2026 Victor Gordan. Licensed under GPL-3.0.</Copyright>
     <DebugType>embedded</DebugType>
     <GenerateResourceUsePreserializedResources>false</GenerateResourceUsePreserializedResources>
     <!-- GitHub "owner/repo" whose releases the in-app updater reads ("OWNER/stand-mate" disables updates). -->
