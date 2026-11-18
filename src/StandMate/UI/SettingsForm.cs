@@ -19,7 +19,7 @@ namespace StandMate.UI
     {
         private const int FieldWidth = 92;
         private const int ContentWidth = 470;
-        private static readonly string[] Pages = { "Schedule", "Mates", "Popup", "General" };
+        private static readonly string[] Pages = { "Schedule", "Breaks", "Mates", "Popup", "General" };
 
         private readonly IAppHost _host;
         private readonly Timer _statusTimer;
@@ -108,6 +108,7 @@ namespace StandMate.UI
             Control body;
             switch (page)
             {
+                case "Breaks": body = BuildBreaks(); break;
                 case "Mates": body = BuildMates(); break;
                 case "Popup": body = BuildPopup(); break;
                 case "General": body = BuildGeneral(); break;
@@ -393,6 +394,93 @@ namespace StandMate.UI
             col.Controls.Add(howRow);
         }
 
+        private Control BuildBreaks()
+        {
+            var s = _host.Settings;
+            var col = Page("Breaks", "Every now and then, step away from the desk for a few minutes.");
+
+            var detail = _ui.Column();
+            detail.Visible = s.Breaks;
+            col.Controls.Add(_ui.Row(Field("Breaks"), _ui.Check("Remind me to take breaks", s.Breaks, v =>
+            {
+                s.Breaks = v;
+                detail.Visible = v;
+                _host.SettingsChanged(false);
+            })));
+            col.Controls.Add(detail);
+
+            // Mode, like on the Schedule page: the drop-down picks how breaks come, the rows below follow it.
+            var modes = new[]
+            {
+                (Id: BreakEveryIds.Minutes, Name: "Every few minutes", Description: "A break after a set amount of sitting and standing."),
+                (Id: BreakEveryIds.Switches, Name: "Every few switches", Description: "Every so many switches, one becomes a break."),
+            };
+            var combo = _ui.Combo(220);
+            foreach (var m in modes) combo.Items.Add(m.Name);
+            combo.SelectedIndex = s.BreakEvery == BreakEveryIds.Switches ? 1 : 0;
+            var desc = _ui.Label(modes[combo.SelectedIndex].Description, muted: true);
+            var modeDetail = _ui.Column();
+            modeDetail.Margin = _ui.P(0, 12, 0, 0);
+            detail.Controls.Add(_ui.Row(Field("Mode"), combo));
+            detail.Controls.Add(Indent(desc));
+            detail.Controls.Add(modeDetail);
+
+            BuildBreakModeDetail(modeDetail);
+            combo.SelectedIndexChanged += (o, e) =>
+            {
+                s.BreakEvery = modes[combo.SelectedIndex].Id;
+                desc.Text = modes[combo.SelectedIndex].Description;
+                _host.SettingsChanged(false);
+                modeDetail.SuspendLayout();
+                foreach (Control c in modeDetail.Controls.Cast<Control>().ToList()) c.Dispose();
+                BuildBreakModeDetail(modeDetail);
+                modeDetail.ResumeLayout(true);
+            };
+
+            detail.Controls.Add(Indent(_ui.Paragraph(
+                "Each mate has its own GIFs and sounds for the start and end of a break: see Mates. Mates without any " +
+                "play two default sounds. You can also take a break any time from the tray menu.", ContentWidth - FieldWidth, 0, _ui.Small)));
+            return col;
+        }
+
+        /// <summary>The rows for the selected break mode: how often, how long, and how it works.</summary>
+        private void BuildBreakModeDetail(FlowLayoutPanel p)
+        {
+            var s = _host.Settings;
+            var hint = _ui.Paragraph("", ContentWidth - FieldWidth, 10, _ui.Small);
+            string away = s.PauseWhenAway ? " Being away for at least a break's length counts as one." : "";
+            if (s.BreakEvery == BreakEveryIds.Switches)
+            {
+                void Hint() => hint.Text = (s.BreakSwitches == 1 ? "Every switch" : $"Every {Ordinal(s.BreakSwitches)} switch") +
+                    " between sitting and standing becomes a break. When it's over, you switch." + away;
+                var n = _ui.Number(1, 20, s.BreakSwitches, 1, "", v => { s.BreakSwitches = v; Hint(); _host.SettingsChanged(false); });
+                p.Controls.Add(_ui.Row(Field("Every"), n, _ui.Label("switches", muted: true)));
+                Hint();
+            }
+            else
+            {
+                var n = _ui.Number(10, 600, s.BreakMinutes, 5, " min", v => { s.BreakMinutes = v; _host.SettingsChanged(false); });
+                p.Controls.Add(_ui.Row(Field("Every"), n, _ui.Label("of sitting and standing", muted: true)));
+                hint.Text = "Pauses don't count. The sit/stand countdown waits during the break, and a break that falls " +
+                            "close to a switch takes its place." + away;
+            }
+            p.Controls.Add(_ui.Row(Field("Length"),
+                _ui.Number(1, 60, s.BreakLength, 1, " min", v => { s.BreakLength = v; _host.SettingsChanged(false); })));
+            p.Controls.Add(Indent(hint));
+        }
+
+        private static string Ordinal(int n)
+        {
+            if (n % 100 >= 11 && n % 100 <= 13) return n + "th";
+            switch (n % 10)
+            {
+                case 1: return n + "st";
+                case 2: return n + "nd";
+                case 3: return n + "rd";
+                default: return n + "th";
+            }
+        }
+
         private Control RangeRow(string label, int min, int max, Action<int, int> set)
         {
             NumberBox lo = null, hi = null;
@@ -411,7 +499,9 @@ namespace StandMate.UI
 
         private Control BuildMates()
         {
-            var col = Page("Mates", "A mate is a GIF + sound for standing up, and another pair for sitting down.");
+            var col = Page("Mates", _host.Settings.Breaks
+                ? "A mate is a GIF + sound for standing up, another pair for sitting down, and one each for the start and end of a break."
+                : "A mate is a GIF + sound for standing up, and another pair for sitting down.");
 
             var list = new ListBox
             {
@@ -507,9 +597,14 @@ namespace StandMate.UI
             col.Controls.Add(_ui.Row(list, buttons));
             col.Controls.Add(_ui.Row(
                 Field("Preview"),
-                _ui.Button("立  Stand", (o, e) => { if (Selected() != null) _host.Preview(Selected(), Phase.Stand); }),
-                _ui.Button("座  Sit", (o, e) => { if (Selected() != null) _host.Preview(Selected(), Phase.Sit); }),
+                _ui.Button("立  Stand", (o, e) => { if (Selected() != null) _host.Preview(Selected().Cue(Phase.Stand)); }),
+                _ui.Button("座  Sit", (o, e) => { if (Selected() != null) _host.Preview(Selected().Cue(Phase.Sit)); }),
                 _ui.Button("Open mates folder", (o, e) => OpenFolder(MateStore.Root))));
+            if (_host.Settings.Breaks)
+                col.Controls.Add(_ui.Row(
+                    Field(""),
+                    _ui.Button("休  Break starts", (o, e) => { if (Selected() != null) _host.Preview(Selected().BreakStartCue()); }),
+                    _ui.Button("戻  Break ends", (o, e) => { if (Selected() != null) _host.Preview(Selected().BreakEndCue(Phase.Stand)); })));
             col.Controls.Add(_ui.Paragraph(
                 "Any GIF (or PNG/JPG) works, with a WAV or MP3 sound. Files are copied into the mate's folder, " +
                 "so you can move or delete the originals.", ContentWidth, 0, _ui.Small));
@@ -625,7 +720,7 @@ namespace StandMate.UI
                 _ui.Number(160, 800, s.PopupWidth, 20, " px", v => { s.PopupWidth = v; _host.SettingsChanged(false); })));
             col.Controls.Add(_ui.Row(Field("Volume"),
                 _ui.Number(0, 100, s.Volume, 5, " %", v => { s.Volume = v; _host.SettingsChanged(false); }),
-                _ui.Button("Test", (o, e) => _host.TestSound(_host.ActiveMate, Phase.Stand))));
+                _ui.Button("Test", (o, e) => _host.TestSound(_host.ActiveMate?.SoundPath(Phase.Stand)))));
 
             var checks = _ui.Column();
             checks.Controls.Add(_ui.Check("Repeat the sound every few seconds until I click", s.RepeatSound,
@@ -635,7 +730,7 @@ namespace StandMate.UI
             col.Controls.Add(_ui.Row(Field("Behaviour"), checks));
 
             col.Controls.Add(_ui.Row(Field(""),
-                _ui.Button("Preview popup", (o, e) => _host.Preview(_host.ActiveMate, Phase.Stand), accent: true)));
+                _ui.Button("Preview popup", (o, e) => { if (_host.ActiveMate != null) _host.Preview(_host.ActiveMate.Cue(Phase.Stand)); }, accent: true)));
             return col;
         }
 

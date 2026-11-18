@@ -35,6 +35,8 @@
   <ItemGroup>
     <!-- Bundled default mates: copied next to the exe as mates\<id>\... (each seeded into %APPDATA% once). -->
     <None Include="..\..\assets\mates\**\*" Link="mates\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Default break sounds for mates that have none set up: copied next to the exe as sounds\... -->
+    <None Include="..\..\assets\sounds\**\*" Link="sounds\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

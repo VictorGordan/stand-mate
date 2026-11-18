@@ -24,7 +24,7 @@ Uninstalling keeps your mates and settings; you'll have to delete those manually
 
 ## Using it
 
-The app lives hidden at the right of your taskbar in the tray. The app will display either 座 for sitting, or 立 for standing.
+The app lives hidden at the right of your taskbar in the tray. The app will display either 座 for sitting, or 立 for standing (or 休 during a break).
 
 <img src="screenshots/taskbar-tray.png" width="20%">
 
@@ -41,6 +41,7 @@ Left click and the app with all settings will pop up.
 <img src="screenshots/app.png" width="50%">
 
 - Schedule: allows you to select how you want the timer to work
+- Breaks: optional breaks away from the desk, with their own GIFs and sounds
 - Mates: you can select your GIF sets here
 - Popup: customize where you want the popup to appear and how
 - General: app-level settings
@@ -61,6 +62,24 @@ update (e.g. 1.x → 2.0) starts the timer fresh.
 | On the clock | stand at the same minute every hour, e.g. :50 to :00 |
 | Progressive | sitting time is fixed, but standing starts short and grows longer each cycle, up to a maximum; obviously resets daily xD |
 | Random | each sit and stand lasts a random length of time (within a selected range) |
+
+### Breaks
+
+Off by default: turn them on in Settings › Breaks. Every so often StandMate tells you to step away from the desk for a
+few minutes (5 by default), and tells you again when the break is over. Pick a mode:
+
+- **Every few minutes**: after X minutes of sitting and standing (pauses and time away don't count). The sit/stand countdown waits during
+  the break and carries on afterwards. A break that falls close to a switch takes that switch's place.
+- **Every few switches**: e.g. every 2nd switch between sitting and standing becomes a break. Once it's over, you switch.
+
+The break runs whether or not you touch the PC. When it's over, a second popup waits for your click; right-click it
+for a longer break. Right-click the first popup to snooze or skip a break. If away detection is on, being away for at
+least a break's length counts as a break. You can also take a break any time from the tray menu, and end it early
+there.
+
+Each mate has its own GIF and sound for the start and the end of a break: while breaks are on, the mate editor shows them
+below standing and sitting, and Settings › Mates can preview them. A mate without any (e.g. one made before breaks
+existed) plays two default sounds and shows no GIF.
 
 ### Starting, sleeping, and being away
 
@@ -84,7 +103,8 @@ Settings › Popup: pick the desired screen, a corner/edge from the 3×3 grid, o
 
 ## Mates (your own GIFs and sound effects)
 
-A **mate** is a GIF + sound (+ optional caption) set for **standing up**, and for **sitting down**
+A **mate** is a GIF + sound (+ optional caption) set for **standing up**, and for **sitting down** (and, if you use
+breaks, for the start and end of a break).
 The app comes with a simple default mate. Make your own in Settings › Mates › **New…**: choose any GIF (PNGs/JPGs work too)
 and a WAV/MP3/WMA sound file for sitting and standing.
 
@@ -94,9 +114,13 @@ Mates live in `%APPDATA%\StandMate\mates\<name>\` as plain files plus a `mate.js
 {
   "name": "StandMate",
   "stand": { "image": "stand.gif", "sound": "stand.wav", "caption": "Stand up and stretch" },
-  "sit":   { "image": "sit.gif",   "sound": "sit.wav",   "caption": "Take a seat" }
+  "sit":   { "image": "sit.gif",   "sound": "sit.wav",   "caption": "Take a seat" },
+  "breakStart": { "image": "break-start.gif", "sound": "break-start.wav", "caption": "Time for a break" },
+  "breakEnd":   { "image": "break-end.gif",   "sound": "break-end.wav",   "caption": "Break's over" }
 }
 ```
+
+`breakStart` and `breakEnd` are optional: without them, the default break sounds play.
 
 Settings are in `%APPDATA%\StandMate\settings.json`.
 
@@ -129,7 +153,7 @@ a whole cycle quickly. `--update-url <url>` reads `latest.json` from another pla
 of GitHub; the signature is still required.
 
 ```
-src/StandMate/Core       schedule engine, modes, settings, mates (pure logic, unit-tested)
+src/StandMate/Core       schedule engine, modes, breaks, settings, mates (pure logic, unit-tested)
 src/StandMate/Platform   Win32 bits: idle time, fullscreen, audio (MCI), autostart
 src/StandMate/UI         tray icons, popup, settings, mate editor
 tests/StandMate.Tests    xUnit tests for the engine and modes

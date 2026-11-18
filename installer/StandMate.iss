@@ -46,11 +46,14 @@ Name: "autostart"; Description: "Start StandMate when I sign in to Windows"; Gro
 ; The bundled default mates are replaced as a whole (older versions shipped different ones).
 ; Users' own copies in %APPDATA%\StandMate\mates are never touched.
 Type: filesandordirs; Name: "{app}\mates"
+Type: filesandordirs; Name: "{app}\sounds"
 
 [Files]
 Source: "{#AppSource}\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#AppSource}\{#AppExe}.config"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#AppSource}\mates\*"; DestDir: "{app}\mates"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Default break sounds, played for mates that have no break sounds of their own.
+Source: "{#AppSource}\sounds\*"; DestDir: "{app}\sounds"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"

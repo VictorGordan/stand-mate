@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -8,18 +9,23 @@ using StandMate.Platform;
 
 namespace StandMate.UI
 {
-    /// <summary>Create/edit a mate: name, and GIF + sound + caption for standing up and for sitting down.</summary>
+    /// <summary>
+    /// Create/edit a mate: name, and a GIF + sound + caption for standing up, sitting down and (when breaks are
+    /// on) the start and end of a break. Picked files are only copied in on Save.
+    /// </summary>
     internal sealed class MateEditorForm : Form
     {
         private readonly Mate _mate;
         private readonly IAppHost _host;
         private readonly Ui _ui;
         private readonly TextBox _name;
-        private readonly Side _stand, _sit;
+        private readonly Side[] _sides;
 
-        /// <summary>Pending edits for one phase; files are only copied in on Save.</summary>
+        /// <summary>One GIF + sound + caption. Pending edits; files are only copied in on Save.</summary>
         private sealed class Side
         {
+            public string Title, BaseName;
+            public MateAction Action;
             public string ImageSource;   // absolute path to show / import
             public string SoundSource;
             public bool ImageChanged, SoundChanged;
@@ -29,11 +35,43 @@ namespace StandMate.UI
             public MemoryStream ThumbStream;
         }
 
+        /// <summary>Standing up and sitting down; the break pair too while breaks are on (hidden, it's left as it is).</summary>
+        private static Side[] SidesFor(Mate mate, bool breaks)
+        {
+            var sides = new List<Side>
+            {
+                new Side { Title = "立  Standing up", BaseName = "stand", Action = mate.Stand,
+                           ImageSource = mate.ImagePath(Phase.Stand), SoundSource = mate.SoundPath(Phase.Stand) },
+                new Side { Title = "座  Sitting down", BaseName = "sit", Action = mate.Sit,
+                           ImageSource = mate.ImagePath(Phase.Sit), SoundSource = mate.SoundPath(Phase.Sit) },
+            };
+            if (breaks)
+            {
+                sides.Add(BreakSide("休  Break starts", "break-start", mate.Folder, mate.BreakStart, a => mate.BreakStart = a, DefaultBreak.StartSound));
+                sides.Add(BreakSide("戻  Break ends", "break-end", mate.Folder, mate.BreakEnd, a => mate.BreakEnd = a, DefaultBreak.EndSound));
+            }
+            return sides.ToArray();
+        }
+
+        private static Side BreakSide(string title, string baseName, string folder, MateAction action, Action<MateAction> attach, string defaultSound)
+        {
+            if (action != null)
+                return new Side { Title = title, BaseName = baseName, Action = action,
+                                  ImageSource = MateStore.MediaPath(folder, action.Image),
+                                  SoundSource = MateStore.MediaPath(folder, action.Sound) };
+
+            // Never set up, so it plays the default sound: start from that (Save copies it into the mate).
+            var fresh = new MateAction();
+            attach(fresh);
+            return new Side { Title = title, BaseName = baseName, Action = fresh, SoundSource = defaultSound, SoundChanged = defaultSound != null };
+        }
+
         public MateEditorForm(Mate mate, bool isNew, IAppHost host, float scale)
         {
             _mate = mate;
             _host = host;
             _ui = new Ui(scale);
+            _sides = SidesFor(mate, host.Settings.Breaks);
 
             AutoScaleMode = AutoScaleMode.None;
             BackColor = Theme.Bg;
@@ -52,11 +90,7 @@ namespace StandMate.UI
             var col = _ui.Column();
             _name = _ui.TextBox(mate.Name, 260);
             col.Controls.Add(_ui.Row(FieldLabel("Name"), _name));
-
-            _stand = new Side { ImageSource = mate.ImagePath(Phase.Stand), SoundSource = mate.SoundPath(Phase.Stand) };
-            _sit = new Side { ImageSource = mate.ImagePath(Phase.Sit), SoundSource = mate.SoundPath(Phase.Sit) };
-            col.Controls.Add(BuildSide(_stand, "立  Standing up", mate.For(Phase.Stand).Caption));
-            col.Controls.Add(BuildSide(_sit, "座  Sitting down", mate.For(Phase.Sit).Caption));
+            foreach (var side in _sides) col.Controls.Add(BuildSide(side));
 
             var save = _ui.Button("Save", (o, e) => Save(), accent: true);
             var cancel = _ui.Button("Cancel", (o, e) => { DialogResult = DialogResult.Cancel; Close(); });
@@ -78,11 +112,11 @@ namespace StandMate.UI
 
         protected override void OnDpiChanged(DpiChangedEventArgs e) => e.Cancel = true; // short-lived dialog: keep its size
 
-        private Control BuildSide(Side side, string title, string caption)
+        private Control BuildSide(Side side)
         {
             var box = _ui.Column();
             box.Margin = _ui.P(0, 12, 0, 0);
-            box.Controls.Add(new Label { Text = title, Font = _ui.Semibold, ForeColor = Theme.Accent, AutoSize = true, Margin = _ui.P(0, 0, 0, 6) });
+            box.Controls.Add(new Label { Text = side.Title, Font = _ui.Semibold, ForeColor = Theme.Accent, AutoSize = true, Margin = _ui.P(0, 0, 0, 6) });
 
             side.Thumb = new PictureBox
             {
@@ -93,11 +127,12 @@ namespace StandMate.UI
             };
             side.ImageLabel = FileLabel();
             side.SoundLabel = FileLabel();
-            side.Caption = _ui.TextBox(caption, 230);
+            side.Caption = _ui.TextBox(side.Action?.Caption, 230);
 
             var fields = _ui.Column();
             fields.Controls.Add(_ui.Row(FieldLabel("GIF"), side.ImageLabel,
-                _ui.Button("Choose…", (o, e) => PickImage(side))));
+                _ui.Button("Choose…", (o, e) => PickImage(side)),
+                _ui.Button("✕", (o, e) => { side.ImageSource = null; side.ImageChanged = true; ShowSide(side); })));
             fields.Controls.Add(_ui.Row(FieldLabel("Sound"), side.SoundLabel,
                 _ui.Button("Choose…", (o, e) => PickSound(side)),
                 _ui.Button("▶", (o, e) => Audio.Play(side.SoundSource, _host.Settings.Volume)),
@@ -182,10 +217,9 @@ namespace StandMate.UI
             try
             {
                 _mate.Name = name;
-                Apply(_stand, _mate.Stand, "stand");
-                Apply(_sit, _mate.Sit, "sit");
+                foreach (var side in _sides) Apply(side);
                 MateStore.Save(_mate);
-                MateStore.CleanUnused(_mate);
+                MateStore.CleanUnused(_mate.Folder, _mate.Stand, _mate.Sit, _mate.BreakStart, _mate.BreakEnd);
                 DialogResult = DialogResult.OK;
                 Close();
             }
@@ -195,12 +229,13 @@ namespace StandMate.UI
             }
         }
 
-        private void Apply(Side side, MateAction action, string baseName)
+        private void Apply(Side side)
         {
+            var action = side.Action;
             if (side.ImageChanged)
-                action.Image = side.ImageSource != null ? MateStore.Import(_mate, side.ImageSource, baseName) : null;
+                action.Image = side.ImageSource != null ? MateStore.Import(_mate.Folder, side.ImageSource, side.BaseName) : null;
             if (side.SoundChanged)
-                action.Sound = side.SoundSource != null ? MateStore.Import(_mate, side.SoundSource, baseName) : null;
+                action.Sound = side.SoundSource != null ? MateStore.Import(_mate.Folder, side.SoundSource, side.BaseName) : null;
             string caption = side.Caption.Text.Trim();
             action.Caption = caption.Length > 0 ? caption : null;
         }
@@ -228,7 +263,7 @@ namespace StandMate.UI
         {
             if (disposing)
             {
-                foreach (var side in new[] { _stand, _sit }.Where(x => x?.Thumb != null))
+                foreach (var side in _sides.Where(x => x?.Thumb != null))
                 {
                     var img = side.Thumb.Image;
                     side.Thumb.Image = null; // stops the PictureBox's GIF animation first

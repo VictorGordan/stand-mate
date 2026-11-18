@@ -143,11 +143,78 @@ namespace StandMate.Tests
             Assert.Equal(Min(20), b.NextDuration(Phase.Stand, day.AddHours(12)));
         }
 
+        private static ScheduleEngine WithBreaks()
+        {
+            var e = Fixed();
+            e.SetBreaks(new BreakRule(BreakTrigger.Minutes, 30, 2, 5), T0);
+            return e;
+        }
+
+        [Fact]
+        public void A_break_carries_over_with_its_wall_clock_end()
+        {
+            var old = WithBreaks();
+            old.StartFresh(Phase.Sit, T0);
+            Assert.True(old.Update(T0.AddMinutes(30), TimeSpan.Zero, 1, false));   // break until 35, 15 min of sitting owed
+            var snap = RoundTrip(old.Snapshot(T0.AddMinutes(32)));
+
+            var fresh = WithBreaks();
+            Assert.True(fresh.Restore(snap, T0.AddMinutes(33)));
+            Assert.Equal(RunState.Break, fresh.State);
+            Assert.Equal(Reminder.BreakStart, fresh.Reminder);
+            Assert.Equal(T0.AddMinutes(35), fresh.EndUtc);
+            Assert.True(fresh.Update(T0.AddMinutes(35), TimeSpan.Zero, 2, false));
+            Assert.Equal(Reminder.BreakEnd, fresh.Reminder);
+            fresh.Acknowledge(T0.AddMinutes(35));
+            Assert.Equal(T0.AddMinutes(50), fresh.EndUtc);
+        }
+
+        [Fact]
+        public void The_time_until_the_next_break_carries_over()
+        {
+            var old = WithBreaks();
+            old.StartFresh(Phase.Sit, T0);
+            var snap = RoundTrip(old.Snapshot(T0.AddMinutes(10)));      // 20 min until the break
+            var fresh = WithBreaks();
+            Assert.True(fresh.Restore(snap, T0.AddMinutes(11)));
+            Assert.Equal(Min(20), fresh.BreakIn(T0.AddMinutes(11)));
+        }
+
+        [Fact]
+        public void A_snapshot_from_before_breaks_starts_the_break_countdown_over()
+        {
+            var old = Fixed();                                         // 1.2: no break fields at all
+            old.Start(Phase.Sit, T0);
+            var snap = old.Snapshot(T0.AddMinutes(10));
+            snap.Reminder = null; snap.BreakLeftMs = null; snap.Switches = 0; snap.ResumeEndUtc = null;
+            snap = RoundTrip(snap);
+
+            var fresh = WithBreaks();
+            fresh.StartFresh(Phase.Sit, T0);
+            Assert.True(fresh.Restore(snap, T0.AddMinutes(11)));
+            Assert.Equal(Reminder.Switch, fresh.Reminder);
+            Assert.Equal(Min(30), fresh.BreakIn(T0.AddMinutes(11)));
+        }
+
+        [Fact]
+        public void A_reminder_shown_at_startup_can_be_handed_over()
+        {
+            // On the clock, started inside the stand window: due before any phase ran, so no end time was ever set.
+            // It must still serialize east of UTC, where a local DateTime.MinValue can't be written as JSON.
+            var local = new DateTime(2026, 11, 9, 10, 52, 0, DateTimeKind.Local);
+            var e = new ScheduleEngine(new ClockMode(50, 10));
+            Assert.True(e.StartFresh(Phase.Sit, local.ToUniversalTime()));
+            var snap = RoundTrip(e.Snapshot(local.ToUniversalTime()));
+            Assert.Equal("Due", snap.State);
+        }
+
         [Fact]
         public void Garbage_snapshots_are_refused()
         {
             Assert.False(Fixed().Restore(null, T0));
             Assert.False(Fixed().Restore(new EngineSnapshot { Phase = "Sit", State = "Exploded", SavedUtc = T0 }, T0));
+            Assert.False(Fixed().Restore(new EngineSnapshot { Phase = "Sit", State = "7", SavedUtc = T0 }, T0));
+            Assert.False(Fixed().Restore(new EngineSnapshot { Phase = "Sit", State = "Due", Reminder = "Nap", SavedUtc = T0 }, T0));
         }
 
         [Theory]

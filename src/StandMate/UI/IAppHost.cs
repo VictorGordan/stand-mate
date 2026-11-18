@@ -16,9 +16,9 @@ namespace StandMate.UI
 
         void SetActiveMate(string id);
         void ReloadMates();
-        void Preview(Mate mate, Phase phase);
+        void Preview(Cue cue);
         void StartPlacement(Action done);
-        void TestSound(Mate mate, Phase phase);
+        void TestSound(string path);
         string StatusText();
 
         /// <summary>"Check for updates" state, shared so it survives the settings window being closed.</summary>

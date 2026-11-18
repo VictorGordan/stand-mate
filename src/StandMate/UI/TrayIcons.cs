@@ -10,12 +10,12 @@ using StandMate.Platform;
 namespace StandMate.UI
 {
     /// <summary>
-    /// Tray icons drawn once at startup from a font glyph: 座 while sitting, 立 while standing,
+    /// Tray icons drawn once at startup from a font glyph: 座 while sitting, 立 while standing, 休 on a break,
     /// greyed out while paused/away. No image assets needed.
     /// </summary>
     internal sealed class TrayIcons : IDisposable
     {
-        private readonly Icon _sit, _stand, _sitDim, _standDim;
+        private readonly Icon _sit, _stand, _sitDim, _standDim, _break;
 
         public TrayIcons()
         {
@@ -24,10 +24,13 @@ namespace StandMate.UI
             _stand = Make(Phase.Stand.Kanji(), Theme.Accent, Theme.Bg, size);
             _sitDim = Make(Phase.Sit.Kanji(), Theme.Dim, Theme.Bg, size);
             _standDim = Make(Phase.Stand.Kanji(), Theme.Dim, Theme.Bg, size);
+            _break = Make(PhaseExtensions.BreakKanji, Theme.Accent, Theme.Bg, size);
         }
 
         public Icon For(Phase phase, bool dim) =>
             phase == Phase.Sit ? (dim ? _sitDim : _sit) : (dim ? _standDim : _stand);
+
+        public Icon Break => _break;
 
         public static Icon Make(string glyph, Color bg, Color fg, int size)
         {
@@ -76,7 +79,7 @@ namespace StandMate.UI
 
         public void Dispose()
         {
-            _sit.Dispose(); _stand.Dispose(); _sitDim.Dispose(); _standDim.Dispose();
+            _sit.Dispose(); _stand.Dispose(); _sitDim.Dispose(); _standDim.Dispose(); _break.Dispose();
         }
     }
 }

@@ -22,6 +22,13 @@ namespace StandMate.Core
         [DataMember(Name = "frozenMs")] public long FrozenMs;
         [DataMember(Name = "pauseUntilUtc")] public DateTime? PauseUntilUtc;
         [DataMember(Name = "settingsOpen")] public bool SettingsOpen;  // reopen Settings after the update
+
+        // Breaks (1.3+). Missing in older snapshots: the reminder is a switch and the break countdown starts over.
+        [DataMember(Name = "reminder", EmitDefaultValue = false)] public string Reminder;
+        [DataMember(Name = "breakLeftMs", EmitDefaultValue = false)] public long? BreakLeftMs;
+        [DataMember(Name = "switches", EmitDefaultValue = false)] public int Switches;
+        [DataMember(Name = "switchAfterBreak", EmitDefaultValue = false)] public bool SwitchAfterBreak;
+        [DataMember(Name = "resumeEndUtc", EmitDefaultValue = false)] public DateTime? ResumeEndUtc;
     }
 
     /// <summary>Reading/writing the snapshot file and deciding whether it may be used.</summary>

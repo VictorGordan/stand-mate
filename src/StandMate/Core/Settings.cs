@@ -13,6 +13,12 @@ namespace StandMate.Core
         public const string Random = "random";
     }
 
+    public static class BreakEveryIds
+    {
+        public const string Minutes = "minutes";
+        public const string Switches = "switches";
+    }
+
     public static class Anchors
     {
         public const string Custom = "Custom";
@@ -50,6 +56,13 @@ namespace StandMate.Core
         [DataMember(Name = "awayMinutes")] public int AwayMinutes;
         [DataMember(Name = "awayRewind")] public bool AwayRewind;       // true: rewind to last input, then pause
 
+        // Breaks (off by default)
+        [DataMember(Name = "breaks")] public bool Breaks;
+        [DataMember(Name = "breakEvery")] public string BreakEvery;     // "minutes" | "switches"
+        [DataMember(Name = "breakMinutes")] public int BreakMinutes;    // of sitting/standing between breaks
+        [DataMember(Name = "breakSwitches")] public int BreakSwitches;  // every Nth switch becomes a break
+        [DataMember(Name = "breakLength")] public int BreakLength;
+
         // Mate
         [DataMember(Name = "mate")] public string MateId;
 
@@ -84,6 +97,7 @@ namespace StandMate.Core
             RandSitMin = 30; RandSitMax = 60; RandStandMin = 10; RandStandMax = 20;
             StartWith = "sit";
             PauseWhenAway = true; AwayMinutes = 5; AwayRewind = true;
+            Breaks = false; BreakEvery = BreakEveryIds.Minutes; BreakMinutes = 60; BreakSwitches = 2; BreakLength = 5;
             MateId = "default";
             ScreenDevice = null;
             Anchor = "BottomRight";
@@ -110,6 +124,10 @@ namespace StandMate.Core
             if (Sequence == null) Sequence = "";
             if (StartWith != "stand") StartWith = "sit";
             AwayMinutes = Clamp(AwayMinutes, 1, 120);
+            if (BreakEvery != BreakEveryIds.Switches) BreakEvery = BreakEveryIds.Minutes;
+            BreakMinutes = Clamp(BreakMinutes, 10, 600);
+            BreakSwitches = Clamp(BreakSwitches, 1, 20);
+            BreakLength = Clamp(BreakLength, 1, 60);
             if (Array.IndexOf(Anchors.Grid, Anchor) < 0 && Anchor != Anchors.Custom) Anchor = "BottomRight";
             CustomX = Math.Max(0, Math.Min(1, CustomX)); CustomY = Math.Max(0, Math.Min(1, CustomY));
             PopupWidth = Clamp(PopupWidth, 120, 900);

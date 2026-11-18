@@ -10,6 +10,13 @@ released under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) (WA
 |---|---|---|
 | StandMate (default) | `confirmation_002.wav` | `minimize_006.wav` |
 
+The default break sounds in `assets/sounds/` (played for mates without break sounds of their own) come from the same pack:
+
+| Break | File |
+|---|---|
+| starts (`break-start.wav`) | `question_002.wav` |
+| ends (`break-end.wav`) | `confirmation_004.wav` |
+
 ## Art
 
 The default mate's art (`assets/mates/default/`, except the sounds above) is made by me (Victor Gordan) and is

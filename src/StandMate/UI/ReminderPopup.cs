@@ -10,7 +10,7 @@ namespace StandMate.UI
 {
     internal enum PopupKind
     {
-        /// <summary>The real reminder: click = switched, right-click = snooze/skip.</summary>
+        /// <summary>The real reminder: click = confirmed, right-click = its menu (snooze/skip).</summary>
         Reminder,
         /// <summary>Settings preview: any click closes.</summary>
         Preview,
@@ -27,11 +27,10 @@ namespace StandMate.UI
         private const int RepeatDelayMs = 8000;
 
         private readonly PopupKind _kind;
-        private readonly Phase _phase;
+        private readonly string _kanji;
         private readonly string _caption;
         private readonly string _soundPath;
         private readonly int _volume;
-        private readonly bool _repeat;
         private readonly float _scale;
         private readonly Rectangle _targetBounds;
         private readonly Font _captionFont, _kanjiFont, _hintFont;
@@ -48,20 +47,35 @@ namespace StandMate.UI
         private ContextMenuStrip _menu;
 
         public event Action Confirmed;
-        public event Action<int> Snoozed;
-        public event Action Skipped;
         public event Action<Rectangle> PlacementSaved;
 
         public PopupKind Kind => _kind;
 
-        public ReminderPopup(PopupKind kind, Mate mate, Phase phase, Settings s)
+        /// <summary>Replay the sound every few seconds until clicked. Defaults to the setting, for reminders. Set before Show.</summary>
+        public bool Repeat { get; set; }
+
+        /// <summary>Reminders: the right-click menu. Each item closes the popup after running.</summary>
+        public (string Text, Action Action)[] MenuItems { get; set; } = new (string, Action)[0];
+
+        /// <summary>Reminders: the tooltip.</summary>
+        public string Hint
         {
+            set
+            {
+                if (_tip == null) _tip = new ToolTip { ShowAlways = true, InitialDelay = 900 };
+                _tip.SetToolTip(this, value);
+            }
+        }
+
+        public ReminderPopup(PopupKind kind, Cue cue, Settings s)
+        {
+            cue = cue ?? new Cue { Caption = Phase.Stand.Label(), Kanji = Phase.Stand.Kanji() };
             _kind = kind;
-            _phase = phase;
-            _caption = kind == PopupKind.Placement ? "Drag me, then double-click" : (mate?.Caption(phase) ?? phase.Label());
-            _soundPath = kind == PopupKind.Placement ? null : mate?.SoundPath(phase);
+            _kanji = cue.Kanji ?? "";
+            _caption = kind == PopupKind.Placement ? "Drag me, then double-click" : cue.Caption ?? "";
+            _soundPath = kind == PopupKind.Placement ? null : cue.SoundPath;
             _volume = s.Volume;
-            _repeat = s.RepeatSound && kind == PopupKind.Reminder;
+            Repeat = s.RepeatSound && kind == PopupKind.Reminder;
 
             var screen = Screens.Find(s.ScreenDevice);
             _scale = Screens.Scale(screen);
@@ -82,17 +96,11 @@ namespace StandMate.UI
             KeyPreview = true;
             Cursor = kind == PopupKind.Placement ? Cursors.SizeAll : Cursors.Hand;
 
-            LoadImage(mate?.ImagePath(phase));
+            LoadImage(cue.ImagePath);
             var size = ComputeLayout(s.PopupWidth);
             var loc = Screens.Place(size, screen, s.Anchor, s.CustomX, s.CustomY, (int)Math.Round(20 * _scale));
             _targetBounds = new Rectangle(loc, size);
             Bounds = _targetBounds;
-
-            if (kind == PopupKind.Reminder)
-            {
-                _tip = new ToolTip { ShowAlways = true, InitialDelay = 900 };
-                _tip.SetToolTip(this, "Click once you've switched  ·  right-click to snooze or skip");
-            }
         }
 
         // ---------------- window plumbing ----------------
@@ -130,7 +138,7 @@ namespace StandMate.UI
                     m.Result = IntPtr.Zero; // we size ourselves in physical pixels
                     return;
                 case Native.MM_MCINOTIFY:
-                    if ((int)m.WParam == Native.MCI_NOTIFY_SUCCESSFUL && _repeat && !IsDisposed)
+                    if ((int)m.WParam == Native.MCI_NOTIFY_SUCCESSFUL && Repeat && !IsDisposed)
                     {
                         if (_repeatTimer == null)
                         {
@@ -154,7 +162,7 @@ namespace StandMate.UI
                 _animating = true;
             }
             if (_soundPath != null)
-                _soundStarted = Audio.Play(_soundPath, _volume, _repeat ? Handle : IntPtr.Zero);
+                _soundStarted = Audio.Play(_soundPath, _volume, Repeat ? Handle : IntPtr.Zero);
             if (_kind == PopupKind.Placement) Activate();
         }
 
@@ -224,13 +232,12 @@ namespace StandMate.UI
 
             if (!e.ClipRectangle.IntersectsWith(_captionRect) && _kind != PopupKind.Placement) return;
 
-            // 立 / 座 in the accent colour, then the caption.
+            // 立 / 座 / 休 in the accent colour, then the caption.
             var r = _captionRect;
             int gap = (int)Math.Round(8 * _scale);
-            string kanji = _phase.Kanji();
-            var kSize = TextRenderer.MeasureText(g, kanji, _kanjiFont, Size.Empty, TextFormatFlags.NoPadding);
+            var kSize = TextRenderer.MeasureText(g, _kanji, _kanjiFont, Size.Empty, TextFormatFlags.NoPadding);
             var kRect = new Rectangle(r.Left + gap / 2, r.Top, kSize.Width, r.Height);
-            TextRenderer.DrawText(g, kanji, _kanjiFont, kRect, Theme.Accent,
+            TextRenderer.DrawText(g, _kanji, _kanjiFont, kRect, Theme.Accent,
                 TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.NoPadding);
 
             var tRect = new Rectangle(kRect.Right + gap, r.Top, r.Right - kRect.Right - gap, r.Height);
@@ -317,10 +324,14 @@ namespace StandMate.UI
 
         private void ShowReminderMenu(Point p)
         {
-            ShowMenu(p,
-                ("Snooze 5 min", () => { Snoozed?.Invoke(5); Close(); }),
-                ("Snooze 15 min", () => { Snoozed?.Invoke(15); Close(); }),
-                ("Skip this switch", () => { Skipped?.Invoke(); Close(); }));
+            if (MenuItems == null || MenuItems.Length == 0) return;
+            var items = new (string, Action)[MenuItems.Length];
+            for (int i = 0; i < items.Length; i++)
+            {
+                var (text, action) = MenuItems[i];
+                items[i] = (text, () => { action?.Invoke(); if (!IsDisposed) Close(); });
+            }
+            ShowMenu(p, items);
         }
 
         private void ShowPlacementMenu(Point p)

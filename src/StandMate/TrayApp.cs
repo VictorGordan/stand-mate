@@ -58,6 +58,7 @@ namespace StandMate
 
             _engine = new ScheduleEngine(ModeFactory.Create(_settings), fast ? 1.0 / 60 : 1.0);
             ApplyAwaySettings();
+            ApplyBreakSettings();
 
             _invoker = new Control();
             _invoker.CreateControl();
@@ -164,8 +165,7 @@ namespace StandMate
             _timerDueUtc = null;
             if (due.HasValue && now - due.Value > TimeSpan.FromMinutes(2) && WakeFreshStart()) return;
             IdleMonitor.Read(out var idle, out var lastInputTick);
-            bool busy = _engine.State == RunState.Running && now >= _engine.EndUtc &&
-                        _settings.WaitForFullscreen && Fullscreen.IsActive();
+            bool busy = _engine.ReminderDue(now) && _settings.WaitForFullscreen && Fullscreen.IsActive();
 
             var before = _engine.State;
             if (_engine.Update(now, idle, lastInputTick, busy)) ShowReminder();
@@ -217,6 +217,8 @@ namespace StandMate
                 : TimeSpan.FromMinutes(_settings.AwayMinutes);
         }
 
+        private void ApplyBreakSettings() => _engine.SetBreaks(BreakRule.From(_settings), DateTime.UtcNow);
+
         /// <summary>Runs a command on the engine, then re-evaluates and refreshes the tray.</summary>
         private void Do(Action<ScheduleEngine, DateTime> command)
         {
@@ -225,15 +227,65 @@ namespace StandMate
             RefreshTray();
         }
 
+        /// <summary>Shows the popup for <see cref="ScheduleEngine.Reminder"/>: a switch, a break starting, or a break ending.</summary>
         private void ShowReminder()
         {
             ClosePopup();
-            var popup = new ReminderPopup(PopupKind.Reminder, ActiveMate, _engine.NextPhase, _settings);
-            popup.Confirmed += () => Do((e, now) => e.Acknowledge(now));
-            popup.Snoozed += minutes => Do((e, now) => e.Snooze(TimeSpan.FromMinutes(minutes), now));
-            popup.Skipped += () => Do((e, now) => e.Skip(now));
+            ReminderPopup popup;
+            switch (_engine.Reminder)
+            {
+                case Reminder.BreakStart:
+                {
+                    // The break has already started; this popup only announces it, so it doesn't nag.
+                    var after = _engine.PhaseAfterBreak;
+                    string skip = after != _engine.Phase ? $"Skip the break, {after.Label().ToLowerInvariant()} now" : "Skip this break";
+                    popup = new ReminderPopup(PopupKind.Reminder, ActiveMate?.BreakStartCue() ?? DefaultBreak.StartCue(), _settings)
+                    {
+                        Repeat = false,
+                        Hint = "Enjoy your break  ·  right-click to snooze or skip it",
+                        MenuItems = new (string, Action)[]
+                        {
+                            ("Snooze 5 min", () => Snooze(5)),
+                            ("Snooze 15 min", () => Snooze(15)),
+                            (skip, () => Do((e, now) => e.Skip(now))),
+                        },
+                    };
+                    break;
+                }
+                case Reminder.BreakEnd:
+                    popup = new ReminderPopup(PopupKind.Reminder,
+                        ActiveMate?.BreakEndCue(_engine.PhaseAfterBreak) ?? DefaultBreak.EndCue(_engine.PhaseAfterBreak), _settings)
+                    {
+                        Hint = "Click once you're back  ·  right-click for a longer break",
+                        MenuItems = new (string, Action)[]
+                        {
+                            ("5 more minutes", () => Snooze(5)),
+                            ("15 more minutes", () => Snooze(15)),
+                        },
+                    };
+                    popup.Confirmed += () => Do((e, now) => e.Acknowledge(now));
+                    break;
+                default:
+                    popup = new ReminderPopup(PopupKind.Reminder, MateCue(_engine.NextPhase), _settings)
+                    {
+                        Hint = "Click once you've switched  ·  right-click to snooze or skip",
+                        MenuItems = new (string, Action)[]
+                        {
+                            ("Snooze 5 min", () => Snooze(5)),
+                            ("Snooze 15 min", () => Snooze(15)),
+                            ("Skip this switch", () => Do((e, now) => e.Skip(now))),
+                        },
+                    };
+                    popup.Confirmed += () => Do((e, now) => e.Acknowledge(now));
+                    break;
+            }
             ShowPopup(popup);
         }
+
+        private void Snooze(int minutes) => Do((e, now) => e.Snooze(TimeSpan.FromMinutes(minutes), now));
+
+        private Cue MateCue(Phase phase) =>
+            ActiveMate?.Cue(phase) ?? new Cue { Caption = phase == Phase.Stand ? "Time to stand" : "Time to sit", Kanji = phase.Kanji() };
 
         private void ShowPopup(ReminderPopup popup, Action onClosed = null)
         {
@@ -259,7 +311,21 @@ namespace StandMate
         private void SwitchNow(Phase phase)
         {
             ClosePopup();
-            Do((e, now) => e.Start(phase, now));
+            Do((e, now) => e.SwitchTo(phase, now));
+        }
+
+        private void TakeBreak()
+        {
+            ClosePopup();
+            bool started = false;
+            Do((e, now) => started = e.TakeBreak(now));
+            if (started) ShowReminder();
+        }
+
+        private void EndBreak()
+        {
+            ClosePopup();
+            Do((e, now) => e.EndBreak(now));
         }
 
         private void Pause(int? minutes)
@@ -273,8 +339,15 @@ namespace StandMate
         private void RefreshTray()
         {
             var state = _engine.State;
-            var phase = state == RunState.Due ? _engine.NextPhase : _engine.Phase;
-            var icon = _icons.For(phase, dim: state == RunState.Paused || state == RunState.Away);
+            System.Drawing.Icon icon;
+            if (state == RunState.Break) icon = _icons.Break;
+            else
+            {
+                // A reminder that's up shows what it asks you to do.
+                var phase = state != RunState.Due ? _engine.Phase
+                    : _engine.Reminder == Reminder.BreakEnd ? _engine.PhaseAfterBreak : _engine.NextPhase;
+                icon = _icons.For(phase, dim: state == RunState.Paused || state == RunState.Away);
+            }
             if (!ReferenceEquals(icon, _shownIcon))
             {
                 _tray.Icon = icon;
@@ -298,7 +371,10 @@ namespace StandMate
             switch (_engine.State)
             {
                 case RunState.Due:
+                    if (_engine.Reminder == Reminder.BreakEnd) return "Break's over";
                     return _engine.NextPhase == Phase.Stand ? "Time to stand" : "Time to sit";
+                case RunState.Break:
+                    return $"On a break · {Format(_engine.Remaining(now))} left";
                 case RunState.Paused:
                     return _engine.PauseUntilUtc.HasValue
                         ? $"Paused until {_engine.PauseUntilUtc.Value.ToLocalTime():t}"
@@ -311,6 +387,16 @@ namespace StandMate
                     if (now >= _engine.EndUtc) return $"{doing} · {next} when you're back";
                     return $"{doing} · {next} in {Format(_engine.Remaining(now))}";
             }
+        }
+
+        /// <summary>When the next break comes, for the tray menu; null when breaks are off or not counting.</summary>
+        private string NextBreakText()
+        {
+            if (!_settings.Breaks || _engine.OnBreak || _engine.State == RunState.Paused) return null;
+            if (_engine.BreakIn(DateTime.UtcNow) is TimeSpan t) return $"Next break in {Format(t)}";
+            if (_engine.SwitchesBeforeBreak is int n)
+                return n == 0 ? "Next switch is a break" : $"Break after {n} more switch{(n == 1 ? "" : "es")}";
+            return null;
         }
 
         private string Format(TimeSpan t)
@@ -326,10 +412,21 @@ namespace StandMate
             _menu.Items.Clear();
 
             _menu.Items.Add(new ToolStripMenuItem(StatusText()) { Enabled = false });
+            string nextBreak = NextBreakText();
+            if (nextBreak != null) _menu.Items.Add(new ToolStripMenuItem(nextBreak) { Enabled = false });
             _menu.Items.Add(new ToolStripSeparator());
 
-            var target = _engine.State == RunState.Due ? _engine.NextPhase : _engine.Phase.Other();
-            _menu.Items.Add($"{target.Label()} now", null, (s, e) => SwitchNow(target));
+            if (_engine.OnBreak)
+            {
+                _menu.Items.Add("End break", null, (s, e) => EndBreak());
+            }
+            else
+            {
+                var target = _engine.State == RunState.Due ? _engine.NextPhase : _engine.Phase.Other();
+                _menu.Items.Add($"{target.Label()} now", null, (s, e) => SwitchNow(target));
+                if (_settings.Breaks && _engine.State != RunState.Paused)
+                    _menu.Items.Add("Take a break now", null, (s, e) => TakeBreak());
+            }
 
             if (_engine.State == RunState.Paused)
             {
@@ -448,6 +545,7 @@ namespace StandMate
         {
             _settings.Normalize();
             ApplyAwaySettings();
+            ApplyBreakSettings();
             if (scheduleChanged) Do((e, now) => e.SetMode(ModeFactory.Create(_settings), now));
             else Evaluate();
             _saveTimer.Stop();
@@ -472,18 +570,18 @@ namespace StandMate
             }
         }
 
-        public void Preview(Mate mate, Phase phase)
+        public void Preview(Cue cue)
         {
             if (ReminderShowing) return; // never hide a real reminder behind a preview
             ClosePopup();
-            ShowPopup(new ReminderPopup(PopupKind.Preview, mate, phase, _settings));
+            ShowPopup(new ReminderPopup(PopupKind.Preview, cue, _settings));
         }
 
         public void StartPlacement(Action done)
         {
             if (ReminderShowing) return;
             ClosePopup();
-            var popup = new ReminderPopup(PopupKind.Placement, ActiveMate, Phase.Stand, _settings);
+            var popup = new ReminderPopup(PopupKind.Placement, MateCue(Phase.Stand), _settings);
             popup.PlacementSaved += bounds =>
             {
                 var screen = Screen.FromRectangle(bounds);
@@ -497,10 +595,10 @@ namespace StandMate
             ShowPopup(popup, done);
         }
 
-        public void TestSound(Mate mate, Phase phase)
+        public void TestSound(string path)
         {
             if (ReminderShowing) return;
-            Audio.Play(mate?.SoundPath(phase), _settings.Volume);
+            Audio.Play(path, _settings.Volume);
         }
 
         protected override void Dispose(bool disposing)

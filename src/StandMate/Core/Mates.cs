@@ -17,9 +17,15 @@ namespace StandMate.Core
         public MateAction Clone() => (MateAction)MemberwiseClone();
     }
 
+    /// <summary>What one popup shows and plays: absolute file paths (null = none), a caption and a kanji.</summary>
+    public sealed class Cue
+    {
+        public string ImagePath, SoundPath, Caption, Kanji;
+    }
+
     /// <summary>
-    /// A "mate": a GIF + sound (+ caption) for standing up, and another set for sitting down.
-    /// Lives in its own folder: %APPDATA%\StandMate\mates\&lt;id&gt;\mate.json (+ the media files).
+    /// A "mate": a GIF + sound (+ caption) for standing up, another set for sitting down, and one each for the
+    /// start and end of a break. Lives in its own folder: %APPDATA%\StandMate\mates\&lt;id&gt;\mate.json (+ the media files).
     /// </summary>
     [DataContract]
     public sealed class Mate
@@ -28,27 +34,42 @@ namespace StandMate.Core
         [DataMember(Name = "stand")] public MateAction Stand;
         [DataMember(Name = "sit")] public MateAction Sit;
 
+        // Null = never set up (a mate from before breaks, or made by hand): the default break sounds play.
+        // Once saved from the editor they're always present, so an emptied one really means "no sound, no GIF".
+        [DataMember(Name = "breakStart", EmitDefaultValue = false)] public MateAction BreakStart;
+        [DataMember(Name = "breakEnd", EmitDefaultValue = false)] public MateAction BreakEnd;
+
         [IgnoreDataMember] public string Id;
         [IgnoreDataMember] public string Folder;
 
         public MateAction For(Phase p) => (p == Phase.Stand ? Stand : Sit) ?? new MateAction();
 
-        /// <summary>Absolute path of a media file, or null if not set / missing.</summary>
-        public string PathOf(string fileName)
-        {
-            if (string.IsNullOrWhiteSpace(fileName) || Folder == null) return null;
-            var p = Path.Combine(Folder, Path.GetFileName(fileName));
-            return File.Exists(p) ? p : null;
-        }
-
-        public string ImagePath(Phase p) => PathOf(For(p).Image);
-        public string SoundPath(Phase p) => PathOf(For(p).Sound);
+        public string ImagePath(Phase p) => MateStore.MediaPath(Folder, For(p).Image);
+        public string SoundPath(Phase p) => MateStore.MediaPath(Folder, For(p).Sound);
 
         public string Caption(Phase p)
         {
             var c = For(p).Caption;
             return string.IsNullOrWhiteSpace(c) ? (p == Phase.Stand ? "Time to stand" : "Time to sit") : c.Trim();
         }
+
+        public Cue Cue(Phase p) => new Cue { ImagePath = ImagePath(p), SoundPath = SoundPath(p), Caption = Caption(p), Kanji = p.Kanji() };
+
+        /// <summary>The popup when a break starts: 休 with this mate's break GIF/sound (or the defaults if it has none set up).</summary>
+        public Cue BreakStartCue() => BreakStart == null ? DefaultBreak.StartCue()
+            : BreakCue(BreakStart, DefaultBreak.StartCaption, PhaseExtensions.BreakKanji);
+
+        /// <summary>The popup when a break is over, with the kanji of the phase you go back to.</summary>
+        public Cue BreakEndCue(Phase back) => BreakEnd == null ? DefaultBreak.EndCue(back)
+            : BreakCue(BreakEnd, DefaultBreak.EndCaption, back.Kanji());
+
+        private Cue BreakCue(MateAction a, string defaultCaption, string kanji) => new Cue
+        {
+            ImagePath = MateStore.MediaPath(Folder, a.Image),
+            SoundPath = MateStore.MediaPath(Folder, a.Sound),
+            Caption = string.IsNullOrWhiteSpace(a.Caption) ? defaultCaption : a.Caption.Trim(),
+            Kanji = kanji,
+        };
     }
 
     public static class MateStore
@@ -158,28 +179,36 @@ namespace StandMate.Core
         /// Copies a user-picked file into the mate's folder as e.g. "stand.gif" / "sit-sound.mp3"
         /// so the mate keeps working if the original moves. Returns the stored file name.
         /// </summary>
-        public static string Import(Mate m, string sourcePath, string baseName)
+        public static string Import(string folder, string sourcePath, string baseName)
         {
-            Directory.CreateDirectory(m.Folder);
+            Directory.CreateDirectory(folder);
             string ext = Path.GetExtension(sourcePath).ToLowerInvariant();
             string fileName = baseName + ext;
-            string dest = Path.Combine(m.Folder, fileName);
+            string dest = Path.Combine(folder, fileName);
             if (!string.Equals(Path.GetFullPath(sourcePath), Path.GetFullPath(dest), StringComparison.OrdinalIgnoreCase))
                 File.Copy(sourcePath, dest, true);
             return fileName;
         }
 
-        /// <summary>Deletes media files in the mate folder that mate.json no longer references.</summary>
-        public static void CleanUnused(Mate m)
+        /// <summary>Absolute path of a media file in <paramref name="folder"/>, or null if not set / missing.</summary>
+        public static string MediaPath(string folder, string fileName)
         {
-            if (m.Folder == null || !Directory.Exists(m.Folder)) return;
-            var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "mate.json" };
-            foreach (var a in new[] { m.Stand, m.Sit })
+            if (string.IsNullOrWhiteSpace(fileName) || folder == null) return null;
+            var p = Path.Combine(folder, Path.GetFileName(fileName));
+            return File.Exists(p) ? p : null;
+        }
+
+        /// <summary>Deletes media files in <paramref name="folder"/> that none of <paramref name="actions"/> reference.</summary>
+        public static void CleanUnused(string folder, params MateAction[] actions)
+        {
+            if (folder == null || !Directory.Exists(folder)) return;
+            var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var a in actions)
             {
                 if (a?.Image != null) used.Add(Path.GetFileName(a.Image));
                 if (a?.Sound != null) used.Add(Path.GetFileName(a.Sound));
             }
-            foreach (var f in Directory.GetFiles(m.Folder))
+            foreach (var f in Directory.GetFiles(folder))
             {
                 var ext = Path.GetExtension(f).ToLowerInvariant();
                 bool media = ImageExtensions.Contains(ext) || SoundExtensions.Contains(ext);
