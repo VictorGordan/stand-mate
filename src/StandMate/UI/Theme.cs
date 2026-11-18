@@ -2,22 +2,77 @@ using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
+using StandMate.Core;
 using StandMate.Platform;
 
 namespace StandMate.UI
 {
-    /// <summary>Quiet dark palette with a single muted sakura accent.</summary>
+    /// <summary>One colour scheme: a quiet dark base and a single muted accent.</summary>
+    internal sealed class Palette
+    {
+        public string Id, Name, Kanji, Description;
+        public Color Bg, Surface, Control, ControlHover, Border, Accent, AccentHover;
+
+        public static readonly Palette[] All =
+        {
+            // The original look; the neutral greys are shared by the other themes, only slightly tinted.
+            new Palette
+            {
+                Id = ThemeIds.Sakura, Name = "Sakura", Kanji = "桜", Description = "Cherry blossom pink",
+                Bg = Theme.Hex(0x1C1D22), Surface = Theme.Hex(0x26272E), Control = Theme.Hex(0x2F3038),
+                ControlHover = Theme.Hex(0x3A3B45), Border = Theme.Hex(0x42434D),
+                Accent = Theme.Hex(0xE39AAE), AccentHover = Theme.Hex(0xEDB1C1),
+            },
+            new Palette
+            {
+                Id = ThemeIds.Minty, Name = "Minty", Kanji = "薄荷", Description = "Fresh mint green",
+                Bg = Theme.Hex(0x1A1E1E), Surface = Theme.Hex(0x232828), Control = Theme.Hex(0x2C3232),
+                ControlHover = Theme.Hex(0x363E3D), Border = Theme.Hex(0x3F4847),
+                Accent = Theme.Hex(0x8FD6B8), AccentHover = Theme.Hex(0xA9E2CA),
+            },
+            new Palette
+            {
+                Id = ThemeIds.Lavender, Name = "Lavender", Kanji = "藤", Description = "Soft wisteria purple",
+                Bg = Theme.Hex(0x1D1C23), Surface = Theme.Hex(0x27262F), Control = Theme.Hex(0x302F3A),
+                ControlHover = Theme.Hex(0x3B3A47), Border = Theme.Hex(0x44434F),
+                Accent = Theme.Hex(0xB5A3E6), AccentHover = Theme.Hex(0xC7B9EE),
+            },
+            new Palette
+            {
+                Id = ThemeIds.Sky, Name = "Sky", Kanji = "空", Description = "Clear sky blue",
+                Bg = Theme.Hex(0x1B1D22), Surface = Theme.Hex(0x25282E), Control = Theme.Hex(0x2E3138),
+                ControlHover = Theme.Hex(0x393D45), Border = Theme.Hex(0x42464E),
+                Accent = Theme.Hex(0x8EC1E8), AccentHover = Theme.Hex(0xA9D0EE),
+            },
+            new Palette
+            {
+                Id = ThemeIds.Amber, Name = "Amber", Kanji = "柚子", Description = "Warm yuzu amber",
+                Bg = Theme.Hex(0x1F1D1B), Surface = Theme.Hex(0x292724), Control = Theme.Hex(0x33302C),
+                ControlHover = Theme.Hex(0x3E3A35), Border = Theme.Hex(0x48443E),
+                Accent = Theme.Hex(0xE8BE7E), AccentHover = Theme.Hex(0xEECD99),
+            },
+        };
+
+        public static Palette Get(string id) => Array.Find(All, p => p.Id == id) ?? All[0];
+    }
+
+    /// <summary>The colours in use: <see cref="Palette.Get"/> of the chosen theme (Sakura by default).</summary>
     internal static class Theme
     {
-        public static readonly Color Bg = Hex(0x1C1D22);
-        public static readonly Color Surface = Hex(0x26272E);
-        public static readonly Color Control = Hex(0x2F3038);
-        public static readonly Color ControlHover = Hex(0x3A3B45);
-        public static readonly Color Border = Hex(0x42434D);
+        public static Palette Current { get; private set; }
+
+        /// <summary>Switches the theme. Windows built afterwards use it; the caller refreshes open ones.</summary>
+        public static void Apply(string id) => Current = Palette.Get(id);
+
+        public static Color Bg => (Current ?? Palette.All[0]).Bg;
+        public static Color Surface => (Current ?? Palette.All[0]).Surface;
+        public static Color Control => (Current ?? Palette.All[0]).Control;
+        public static Color ControlHover => (Current ?? Palette.All[0]).ControlHover;
+        public static Color Border => (Current ?? Palette.All[0]).Border;
+        public static Color Accent => (Current ?? Palette.All[0]).Accent;
+        public static Color AccentHover => (Current ?? Palette.All[0]).AccentHover;
         public static readonly Color Text = Hex(0xE7E7EA);
         public static readonly Color Muted = Hex(0x9A9BA3);
-        public static readonly Color Accent = Hex(0xE39AAE);
-        public static readonly Color AccentHover = Hex(0xEDB1C1);
         public static readonly Color Error = Hex(0xEE8A7A);
         public static readonly Color Dim = Hex(0x6E6F78);
 

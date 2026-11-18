@@ -70,6 +70,11 @@ Filename: "{app}\{#AppExe}"; Parameters: "--background"; Flags: nowait; Check: W
 [UninstallRun]
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM {#AppExe}"; Flags: runhidden; RunOnceId: "StopStandMate"
 
+[UninstallDelete]
+; Taskbar icons in the theme's colours, written by the app (a cache, not user data).
+Type: filesandordirs; Name: "{localappdata}\StandMate\icons"
+Type: dirifempty; Name: "{localappdata}\StandMate"
+
 [Code]
 // Already installed for this user (i.e. this is an upgrade or a reinstall).
 function IsUpgrade: Boolean;

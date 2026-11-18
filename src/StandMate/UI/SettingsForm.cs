@@ -19,12 +19,14 @@ namespace StandMate.UI
     {
         private const int FieldWidth = 92;
         private const int ContentWidth = 470;
-        private static readonly string[] Pages = { "Schedule", "Breaks", "Mates", "Popup", "General" };
+        private static readonly string[] Pages = { "Schedule", "Breaks", "Mates", "Popup", "Theme", "General" };
 
         private readonly IAppHost _host;
         private readonly Timer _statusTimer;
         private readonly List<Button> _nav = new List<Button>();
         private Ui _ui;
+        private DarkToolTip _tip;
+        private bool _taskbarIdentity;
         private Panel _sidebar, _content;
         private Label _status;
         private Label _updateLabel;
@@ -47,7 +49,7 @@ namespace StandMate.UI
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.Manual;
-            try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (Exception) { }
+            Icon = AppIcon.Current;
 
             // Open centred on the monitor under the mouse, sized for that monitor's DPI.
             var screen = Screen.FromPoint(Cursor.Position);
@@ -68,6 +70,22 @@ namespace StandMate.UI
         {
             base.OnHandleCreated(e);
             Theme.DarkTitleBar(Handle);
+            // Other themes: a taskbar identity of their own, so the button shows the themed icon (see TaskbarIdentity).
+            // Sakura keeps the normal one, whose icon (StandMate.exe's) is already Sakura.
+            string theme = Theme.Current?.Id ?? ThemeIds.Sakura;
+            string icon = theme == ThemeIds.Sakura ? null : AppIcon.CurrentFile();
+            _taskbarIdentity = icon != null;
+            if (_taskbarIdentity)
+                TaskbarIdentity.Set(Handle, "VictorGordan.StandMate.Theme." + theme, icon + ",0",
+                    "\"" + Application.ExecutablePath + "\"", "StandMate");
+        }
+
+        protected override void OnHandleDestroyed(EventArgs e)
+        {
+            // The shell asks windows to clear these before they go away.
+            if (_taskbarIdentity) TaskbarIdentity.Set(Handle, null, null, null, null);
+            _taskbarIdentity = false;
+            base.OnHandleDestroyed(e);
         }
 
         /// <summary>Moved to a monitor with another DPI: rebuild everything at the new scale.</summary>
@@ -89,6 +107,9 @@ namespace StandMate.UI
             SuspendLayout();
             foreach (Control c in Controls.Cast<Control>().ToList()) c.Dispose();
             _nav.Clear();
+            _tip?.Dispose();
+            _tip = new DarkToolTip(_ui.Small, _ui.Scale);
+            BackColor = Theme.Bg;
 
             _content = new Panel { Dock = DockStyle.Fill, Padding = _ui.P(28, 20, 24, 16), BackColor = Theme.Bg, AutoScroll = true };
             _sidebar = new Panel { Dock = DockStyle.Left, Width = _ui.S(176), BackColor = Theme.Surface };
@@ -97,6 +118,27 @@ namespace StandMate.UI
             BuildSidebar();
             ShowPage(_page);
             ResumeLayout(true);
+        }
+
+        /// <summary>The theme changed: redraw everything in it (after the click that changed it has finished).</summary>
+        public void ThemeChanged()
+        {
+            BeginInvoke(new Action(() =>
+            {
+                if (IsDisposed) return;
+                if (IsHandleCreated) Theme.DarkTitleBar(Handle);
+                Icon = AppIcon.Current; // the title bar and Alt+Tab follow right away
+                Build();
+                // The taskbar identity is set as the window is created (OnHandleCreated), and the taskbar doesn't
+                // follow later icon changes: a new window handle gets a new button in the new colours. The controls
+                // and the page stay.
+                if (IsHandleCreated && Visible)
+                {
+                    bool wasActive = ActiveForm == this;
+                    RecreateHandle();
+                    if (wasActive) Activate();
+                }
+            }));
         }
 
         /// <summary>Rebuilds the current page (e.g. after the mode or mate was changed from the tray menu).</summary>
@@ -109,6 +151,7 @@ namespace StandMate.UI
             foreach (var b in _nav) StyleNav(b, (string)b.Tag == page);
 
             _content.SuspendLayout();
+            _tip.RemoveAll();
             foreach (Control c in _content.Controls.Cast<Control>().ToList()) c.Dispose();
             Control body;
             switch (page)
@@ -116,6 +159,7 @@ namespace StandMate.UI
                 case "Breaks": body = BuildBreaks(); break;
                 case "Mates": body = BuildMates(); break;
                 case "Popup": body = BuildPopup(); break;
+                case "Theme": body = BuildTheme(); break;
                 case "General": body = BuildGeneral(); break;
                 default: body = BuildSchedule(); break;
             }
@@ -652,7 +696,7 @@ namespace StandMate.UI
         private Control BuildPopup()
         {
             var s = _host.Settings;
-            var col = Page("Popup", "Where the reminder appears, how big it is and how it sounds.");
+            var col = Page("Popup", "Where the reminder appears, how it looks and how it sounds.");
 
             // Screen
             var screens = Screen.AllScreens;
@@ -723,6 +767,7 @@ namespace StandMate.UI
             // Size & sound
             col.Controls.Add(_ui.Row(Field("Width"),
                 _ui.Number(160, 800, s.PopupWidth, 20, " px", v => { s.PopupWidth = v; _host.SettingsChanged(false); })));
+            col.Controls.Add(BuildPopupText());
             col.Controls.Add(_ui.Row(Field("Volume"),
                 _ui.Number(0, 100, s.Volume, 5, " %", v => { s.Volume = v; _host.SettingsChanged(false); }),
                 _ui.Button("Test", (o, e) => _host.TestSound(_host.ActiveMate?.SoundPath(Phase.Stand)))));
@@ -730,12 +775,102 @@ namespace StandMate.UI
             var checks = _ui.Column();
             checks.Controls.Add(_ui.Check("Repeat the sound every few seconds until I click", s.RepeatSound,
                 v => { s.RepeatSound = v; _host.SettingsChanged(false); }));
-            checks.Controls.Add(_ui.Check("Hold reminders until fullscreen apps (games, videos) close", s.WaitForFullscreen,
-                v => { s.WaitForFullscreen = v; _host.SettingsChanged(false); }));
+            var fullscreen = _ui.Check("Disable reminders when in fullscreen mode", s.WaitForFullscreen,
+                v => { s.WaitForFullscreen = v; _host.SettingsChanged(false); });
+            _tip.SetToolTip(fullscreen,
+                "While a game, a video or a presentation fills the screen, no popup or sound interrupts it.\r\n\r\n" +
+                "The timer keeps running. A reminder that comes due in the meantime waits, and shows as soon as you " +
+                "leave fullscreen.\r\n\r\n" +
+                "Off by default: games are exactly when people forget to move.");
+            checks.Controls.Add(fullscreen);
             col.Controls.Add(_ui.Row(Field("Behaviour"), checks));
 
             col.Controls.Add(_ui.Row(Field(""),
                 _ui.Button("Preview popup", (o, e) => { if (_host.ActiveMate != null) _host.Preview(_host.ActiveMate.Cue(Phase.Stand)); }, accent: true)));
+            return col;
+        }
+
+        /// <summary>"Text: [font ▾] [size]": the popup caption's font and size. Each font is listed in itself.</summary>
+        private Control BuildPopupText()
+        {
+            var s = _host.Settings;
+            List<string> families;
+            using (var installed = new System.Drawing.Text.InstalledFontCollection())
+            {
+                var all = installed.Families;
+                families = all.Select(f => f.Name)
+                    .Where(n => !string.IsNullOrEmpty(n) && !n.StartsWith("@", StringComparison.Ordinal))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(n => n, StringComparer.CurrentCultureIgnoreCase)
+                    .ToList();
+                foreach (var f in all) f.Dispose();
+            }
+            if (!families.Contains(s.PopupFont, StringComparer.OrdinalIgnoreCase))
+                families.Insert(0, s.PopupFont); // e.g. uninstalled since: show it (the popup falls back to the default)
+
+            var fonts = new Dictionary<int, Font>();
+            Font ItemFont(int i)
+            {
+                if (fonts.TryGetValue(i, out var f)) return f;
+                try { f = ReminderPopup.CaptionFont(families[i], _ui.Text.Size); }
+                catch (Exception) { f = null; }
+                return fonts[i] = f;
+            }
+
+            var combo = _ui.Combo(220, ItemFont);
+            combo.MaxDropDownItems = 14;
+            combo.Items.AddRange(families.Cast<object>().ToArray());
+            combo.SelectedIndex = Math.Max(0, families.FindIndex(n => string.Equals(n, s.PopupFont, StringComparison.OrdinalIgnoreCase)));
+            combo.SelectedIndexChanged += (o, e) =>
+            {
+                s.PopupFont = families[combo.SelectedIndex];
+                _host.SettingsChanged(false);
+            };
+            combo.Disposed += (o, e) => { foreach (var f in fonts.Values) f?.Dispose(); fonts.Clear(); };
+
+            var size = _ui.Number(PopupText.MinSize, PopupText.MaxSize, s.PopupTextSize, 1, " px",
+                v => { s.PopupTextSize = v; _host.SettingsChanged(false); });
+            var reset = _ui.Button("Default", (o, e) =>
+            {
+                s.PopupFont = PopupText.DefaultFont;
+                s.PopupTextSize = PopupText.DefaultSize;
+                _host.SettingsChanged(false);
+                BeginInvoke(new Action(() => { if (!IsDisposed) RefreshPage(); }));
+            });
+            return _ui.Row(Field("Text"), combo, size, reset);
+        }
+
+        private Control BuildTheme()
+        {
+            var s = _host.Settings;
+            var col = Page("Theme", "The colours of this window and its icon, the popups, the menus and the tray icons.");
+
+            var grid = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = true,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                MaximumSize = new Size(_ui.S(ContentWidth), 0),
+                Margin = _ui.P(0, 0, 0, 8),
+                BackColor = Color.Transparent,
+            };
+            foreach (var p in Palette.All)
+            {
+                var palette = p;
+                var card = new ThemeCard(_ui, palette, palette.Id == s.ThemeId) { Margin = _ui.P(0, 0, 10, 10) };
+                card.Click += (o, e) =>
+                {
+                    if (s.ThemeId == palette.Id) return;
+                    s.ThemeId = palette.Id;
+                    _host.SettingsChanged(false); // applies the theme and redraws this window
+                };
+                grid.Controls.Add(card);
+            }
+            col.Controls.Add(grid);
+            col.Controls.Add(_ui.Paragraph(
+                "The tray icon shows 座 while you sit, 立 while you stand and 休 on a break, greyed out while paused or away.",
+                ContentWidth, 0, _ui.Small));
             return col;
         }
 
@@ -884,6 +1019,71 @@ namespace StandMate.UI
 
         // ---------------- helpers ----------------
 
+        /// <summary>A clickable preview of one theme, drawn in that theme's own colours with its tray icons.</summary>
+        private sealed class ThemeCard : Control
+        {
+            private readonly Ui _ui;
+            private readonly Palette _p;
+            private readonly bool _selected;
+            private readonly Bitmap _sit, _stand;
+            private bool _hover;
+
+            public ThemeCard(Ui ui, Palette p, bool selected)
+            {
+                _ui = ui; _p = p; _selected = selected;
+                SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
+                         ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+                Size = ui.S(225, 64);
+                Cursor = selected ? Cursors.Default : Cursors.Hand;
+                int icon = ui.S(24);
+                _sit = TrayIcons.Render(Phase.Sit.Kanji(), p.Accent, p.Bg, icon);
+                _stand = TrayIcons.Render(Phase.Stand.Kanji(), p.Accent, p.Bg, icon);
+                AccessibleName = p.Name + (selected ? " (in use)" : "");
+                AccessibleRole = AccessibleRole.RadioButton;
+            }
+
+            protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
+            protected override void OnMouseLeave(EventArgs e) { _hover = false; Invalidate(); base.OnMouseLeave(e); }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                var g = e.Graphics;
+                g.Clear(Theme.Bg);
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                float bw = _selected ? Math.Max(2f, _ui.Scale * 2f) : 1f;
+                var r = new RectangleF(bw / 2, bw / 2, Width - bw - 0.5f, Height - bw - 0.5f);
+                using (var path = Theme.RoundedRect(r, _ui.S(6)))
+                {
+                    using (var b = new SolidBrush(_hover && !_selected ? _p.Control : _p.Surface)) g.FillPath(b, path);
+                    using (var pen = new Pen(_selected ? _p.Accent : _hover ? _p.ControlHover : _p.Border, bw)) g.DrawPath(pen, path);
+                }
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.None;
+
+                int pad = _ui.S(14), gap = _ui.S(6);
+                int iy = (Height - _sit.Height) / 2;
+                g.DrawImage(_sit, pad, iy, _sit.Width, _sit.Height);
+                g.DrawImage(_stand, pad + _sit.Width + gap, iy, _stand.Width, _stand.Height);
+
+                const TextFormatFlags flags = TextFormatFlags.Left | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis;
+                int tx = pad + _sit.Width * 2 + gap + _ui.S(14), tw = Width - tx - pad;
+                var nameSize = TextRenderer.MeasureText(g, _p.Name, _ui.Semibold, Size.Empty, TextFormatFlags.NoPrefix);
+                var subSize = TextRenderer.MeasureText(g, "Ag", _ui.Small, Size.Empty, TextFormatFlags.NoPrefix);
+                int ty = (Height - nameSize.Height - subSize.Height) / 2;
+                TextRenderer.DrawText(g, _p.Name, _ui.Semibold, new Rectangle(tx, ty, tw, nameSize.Height), Theme.Text, flags);
+                TextRenderer.DrawText(g, _p.Kanji, _ui.Small,
+                    new Rectangle(tx + nameSize.Width, ty, Math.Max(0, tw - nameSize.Width), nameSize.Height), _p.Accent,
+                    flags | TextFormatFlags.VerticalCenter);
+                TextRenderer.DrawText(g, _selected ? "In use" : _p.Description, _ui.Small,
+                    new Rectangle(tx, ty + nameSize.Height, tw, subSize.Height), Theme.Muted, flags);
+            }
+
+            protected override void Dispose(bool disposing)
+            {
+                if (disposing) { _sit.Dispose(); _stand.Dispose(); }
+                base.Dispose(disposing);
+            }
+        }
+
         private static string Pretty(string anchor)
         {
             switch (anchor)
@@ -919,6 +1119,7 @@ namespace StandMate.UI
             if (disposing)
             {
                 _statusTimer.Dispose();
+                _tip?.Dispose();
                 _ui?.Dispose(); // fonts last, after the controls using them are gone
             }
         }

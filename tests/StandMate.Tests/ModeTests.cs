@@ -249,5 +249,36 @@ namespace StandMate.Tests
             Assert.Equal(ModeIds.Fixed, s.Mode);
             Assert.True(s.RandSitMax >= s.RandSitMin);
         }
+
+        [Fact]
+        public void Theme_and_popup_text_default_and_normalize()
+        {
+            var s = Json.Read<Settings>(WriteTemp("{ \"volume\": 40 }"));   // a file from before themes
+            Assert.Equal(ThemeIds.Sakura, s.ThemeId);
+            Assert.Equal(PopupText.DefaultFont, s.PopupFont);
+            Assert.Equal(PopupText.DefaultSize, s.PopupTextSize);
+
+            s = new Settings { ThemeId = "neon", PopupFont = " ", PopupTextSize = 500 };
+            s.Normalize();
+            Assert.Equal(ThemeIds.Sakura, s.ThemeId);
+            Assert.Equal(PopupText.DefaultFont, s.PopupFont);
+            Assert.Equal(PopupText.MaxSize, s.PopupTextSize);
+
+            s = new Settings { ThemeId = ThemeIds.Minty, PopupFont = "Consolas", PopupTextSize = 20 };
+            s.Normalize();
+            var back = Json.Read<Settings>(WriteTemp(null, s));
+            Assert.Equal(ThemeIds.Minty, back.ThemeId);
+            Assert.Equal("Consolas", back.PopupFont);
+            Assert.Equal(20, back.PopupTextSize);
+            System.IO.File.Delete(WriteTemp(""));
+        }
+
+        private static string WriteTemp(string json, Settings s = null)
+        {
+            string path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "standmate_theme_test.json");
+            if (s != null) Json.Write(path, s);
+            else System.IO.File.WriteAllText(path, json);
+            return path;
+        }
     }
 }

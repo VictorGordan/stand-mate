@@ -19,6 +19,24 @@ namespace StandMate.Core
         public const string Switches = "switches";
     }
 
+    public static class ThemeIds
+    {
+        public const string Sakura = "sakura";
+        public const string Minty = "minty";
+        public const string Lavender = "lavender";
+        public const string Sky = "sky";
+        public const string Amber = "amber";
+        public static readonly string[] All = { Sakura, Minty, Lavender, Sky, Amber };
+    }
+
+    public static class PopupText
+    {
+        public const string DefaultFont = "Segoe UI Semibold";
+        public const int DefaultSize = 13;   // logical px
+        public const int MinSize = 9;
+        public const int MaxSize = 48;
+    }
+
     public static class Anchors
     {
         public const string Custom = "Custom";
@@ -72,11 +90,16 @@ namespace StandMate.Core
         [DataMember(Name = "customX")] public double CustomX;       // 0..1 across the free space of the work area
         [DataMember(Name = "customY")] public double CustomY;
         [DataMember(Name = "width")] public int PopupWidth;         // logical px (scaled by monitor DPI)
+        [DataMember(Name = "popupFont")] public string PopupFont;   // font family of the caption
+        [DataMember(Name = "popupTextSize")] public int PopupTextSize; // logical px
         [DataMember(Name = "volume")] public int Volume;            // 0..100
         [DataMember(Name = "repeatSound")] public bool RepeatSound;
         // Off by default: games are exactly when people forget to move. Stored under a new key (was
         // "waitFullscreen", default on) so the old saved default doesn't carry over; the old key is ignored.
         [DataMember(Name = "holdForFullscreen")] public bool WaitForFullscreen;
+
+        // Look
+        [DataMember(Name = "theme")] public string ThemeId;
 
         [DataMember(Name = "matesSeeded")] public bool MatesSeeded;          // legacy (1.0–1.1); kept so old files still read
         [DataMember(Name = "seededMates")] public string[] SeededMates;      // bundled mate ids already copied once
@@ -103,9 +126,12 @@ namespace StandMate.Core
             Anchor = "BottomRight";
             CustomX = 1; CustomY = 1;
             PopupWidth = 320;
+            PopupFont = PopupText.DefaultFont;
+            PopupTextSize = PopupText.DefaultSize;
             Volume = 70;
             RepeatSound = false;
             WaitForFullscreen = false;
+            ThemeId = ThemeIds.Sakura;
             MatesSeeded = false;
             SeededMates = null;
         }
@@ -132,6 +158,9 @@ namespace StandMate.Core
             CustomX = Math.Max(0, Math.Min(1, CustomX)); CustomY = Math.Max(0, Math.Min(1, CustomY));
             PopupWidth = Clamp(PopupWidth, 120, 900);
             Volume = Clamp(Volume, 0, 100);
+            if (string.IsNullOrWhiteSpace(PopupFont)) PopupFont = PopupText.DefaultFont;
+            PopupTextSize = Clamp(PopupTextSize, PopupText.MinSize, PopupText.MaxSize);
+            if (Array.IndexOf(ThemeIds.All, ThemeId) < 0) ThemeId = ThemeIds.Sakura;
             if (Mode != ModeIds.Fixed && Mode != ModeIds.Sequence && Mode != ModeIds.Clock &&
                 Mode != ModeIds.Progressive && Mode != ModeIds.Random) Mode = ModeIds.Fixed;
             if (Mode == ModeIds.Sequence && !SequenceParser.TryParse(Sequence, out _, out _)) Mode = ModeIds.Fixed;

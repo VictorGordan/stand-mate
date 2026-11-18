@@ -25,7 +25,7 @@ namespace StandMate
         private readonly Timer _saveTimer = new Timer { Interval = 600 };
         private readonly Timer _trimTimer = new Timer { Interval = 2000 };
         private readonly NotifyIcon _tray;
-        private readonly TrayIcons _icons;
+        private TrayIcons _icons;
         private readonly ContextMenuStrip _menu;
         private readonly Control _invoker;
         private readonly RegisteredWaitHandle _showWait;
@@ -49,6 +49,7 @@ namespace StandMate
             catch (Exception ex) { Program.LogError(ex); }
 
             _settings = Settings.Load();
+            Theme.Apply(_settings.ThemeId);
 
             // Each bundled mate is copied into the user's mates once (1.0–1.1 only had a yes/no flag, but the mates
             // they seeded aren't bundled any more, so starting from an empty list is safe).
@@ -569,12 +570,24 @@ namespace StandMate
         public void SettingsChanged(bool scheduleChanged)
         {
             _settings.Normalize();
+            if (_settings.ThemeId != Theme.Current.Id) ApplyTheme();
             ApplyAwaySettings();
             ApplyBreakSettings();
             if (scheduleChanged) Do((e, now) => e.SetMode(ModeFactory.Create(_settings), now));
             else Evaluate();
             _saveTimer.Stop();
             _saveTimer.Start();
+        }
+
+        /// <summary>Switches to the chosen theme: new tray icons, and the settings window redraws in it.</summary>
+        private void ApplyTheme()
+        {
+            Theme.Apply(_settings.ThemeId);
+            var old = _icons;
+            _icons = new TrayIcons();
+            RefreshTray();
+            old.Dispose();
+            if (_settingsForm != null && !_settingsForm.IsDisposed) _settingsForm.ThemeChanged();
         }
 
         public void SetActiveMate(string id)

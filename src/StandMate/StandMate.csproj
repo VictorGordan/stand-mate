@@ -11,7 +11,7 @@
     <RootNamespace>StandMate</RootNamespace>
     <ApplicationIcon>..\..\assets\icon\standmate.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.3.0</Version>
+    <Version>1.3.1</Version>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Product>StandMate</Product>
     <Description>Reminds you to switch between sitting and standing.</Description>
@@ -37,6 +37,8 @@
     <None Include="..\..\assets\mates\**\*" Link="mates\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <!-- Default break sounds for mates that have none set up: copied next to the exe as sounds\... -->
     <None Include="..\..\assets\sounds\**\*" Link="sounds\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The app icon again, readable at runtime: recoloured into the theme for window icons (UI/AppIcon.cs). -->
+    <EmbeddedResource Include="..\..\assets\icon\standmate.ico" LogicalName="StandMate.icon.ico" />
   </ItemGroup>
 
 </Project>

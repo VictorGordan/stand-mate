@@ -129,8 +129,11 @@ namespace StandMate.UI
             };
         }
 
-        /// <summary>Owner-drawn dark drop-down (no bright Windows selection highlight).</summary>
-        public ComboBox Combo(int width)
+        /// <summary>
+        /// Owner-drawn dark drop-down (no bright Windows selection highlight). <paramref name="itemFont"/> optionally
+        /// gives each item in the open list its own font (e.g. a font picker); null means the normal font.
+        /// </summary>
+        public ComboBox Combo(int width, Func<int, Font> itemFont = null)
         {
             var c = new DarkComboBox
             {
@@ -152,7 +155,8 @@ namespace StandMate.UI
                 using (var bg = new SolidBrush(hot ? Theme.ControlHover : Theme.Control))
                     e.Graphics.FillRectangle(bg, e.Bounds);
                 var r = new Rectangle(e.Bounds.X + S(4), e.Bounds.Y, e.Bounds.Width - S(4), e.Bounds.Height);
-                TextRenderer.DrawText(e.Graphics, c.Items[e.Index].ToString(), Text, r, Theme.Text,
+                var font = (!editPart ? itemFont?.Invoke(e.Index) : null) ?? Text;
+                TextRenderer.DrawText(e.Graphics, c.Items[e.Index].ToString(), font, r, Theme.Text,
                     TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
             };
             return c;
@@ -190,6 +194,46 @@ namespace StandMate.UI
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 Margin = new Padding(0),
                 BackColor = Color.Transparent,
+            };
+        }
+    }
+
+    /// <summary>
+    /// Tooltip drawn in the app's style: dark surface, thin border, light text wrapped to a comfortable width.
+    /// Reads the theme when shown, so it follows theme changes.
+    /// </summary>
+    internal sealed class DarkToolTip : ToolTip
+    {
+        private const TextFormatFlags Flags = TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix | TextFormatFlags.Left;
+        private readonly Font _font;
+        private readonly int _pad, _maxWidth;
+
+        /// <param name="font">Owned by the caller; must outlive the tooltip.</param>
+        public DarkToolTip(Font font, float scale, int maxWidth = 300)
+        {
+            _font = font;
+            _pad = (int)Math.Round(8 * scale);
+            _maxWidth = (int)Math.Round(maxWidth * scale);
+            OwnerDraw = true;
+            ShowAlways = true;
+            InitialDelay = 400;
+            ReshowDelay = 100;
+            AutoPopDelay = 30000;
+            UseAnimation = false;
+            UseFading = false;
+            Popup += (s, e) =>
+            {
+                var t = TextRenderer.MeasureText(GetToolTip(e.AssociatedControl), _font, new Size(_maxWidth, int.MaxValue), Flags);
+                e.ToolTipSize = new Size(t.Width + 2 * _pad, t.Height + 2 * _pad);
+            };
+            Draw += (s, e) =>
+            {
+                var g = e.Graphics;
+                using (var bg = new SolidBrush(Theme.Surface)) g.FillRectangle(bg, e.Bounds);
+                using (var pen = new Pen(Theme.Border))
+                    g.DrawRectangle(pen, e.Bounds.X, e.Bounds.Y, e.Bounds.Width - 1, e.Bounds.Height - 1);
+                var r = Rectangle.Inflate(e.Bounds, -_pad, -_pad);
+                TextRenderer.DrawText(g, e.ToolTipText, _font, r, Theme.Text, Flags);
             };
         }
     }

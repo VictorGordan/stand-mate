@@ -25,6 +25,7 @@ namespace StandMate.UI
     internal sealed class ReminderPopup : Form
     {
         private const int RepeatDelayMs = 8000;
+        private const string PlacementHint = "Esc to cancel";
 
         private readonly PopupKind _kind;
         private readonly string _kanji;
@@ -38,9 +39,9 @@ namespace StandMate.UI
         private MemoryStream _imageStream;
         private Image _image;
         private bool _animating;
-        private Rectangle _imageRect, _captionRect;
+        private Rectangle _imageRect, _captionRect, _kanjiRect, _textRect;
         private Timer _repeatTimer;
-        private ToolTip _tip;
+        private DarkToolTip _tip;
         private bool _soundStarted;
         private bool _dragging;
         private Point _dragOffset;
@@ -62,7 +63,7 @@ namespace StandMate.UI
         {
             set
             {
-                if (_tip == null) _tip = new ToolTip { ShowAlways = true, InitialDelay = 900 };
+                if (_tip == null) _tip = new DarkToolTip(_hintFont, _scale) { InitialDelay = 900 };
                 _tip.SetToolTip(this, value);
             }
         }
@@ -79,8 +80,9 @@ namespace StandMate.UI
 
             var screen = Screens.Find(s.ScreenDevice);
             _scale = Screens.Scale(screen);
-            _captionFont = new Font("Segoe UI Semibold", 13f * _scale, GraphicsUnit.Pixel);
-            _kanjiFont = new Font(Theme.KanjiFontName, 17f * _scale, FontStyle.Bold, GraphicsUnit.Pixel);
+            float textPx = s.PopupTextSize * _scale;
+            _captionFont = CaptionFont(s.PopupFont, textPx);
+            _kanjiFont = new Font(Theme.KanjiFontName, textPx * 17f / PopupText.DefaultSize, FontStyle.Bold, GraphicsUnit.Pixel);
             _hintFont = new Font("Segoe UI", 11f * _scale, GraphicsUnit.Pixel);
 
             AutoScaleMode = AutoScaleMode.None;
@@ -101,6 +103,19 @@ namespace StandMate.UI
             var loc = Screens.Place(size, screen, s.Anchor, s.CustomX, s.CustomY, (int)Math.Round(20 * _scale));
             _targetBounds = new Rectangle(loc, size);
             Bounds = _targetBounds;
+        }
+
+        /// <summary>The caption font: the chosen family in a style it has, or the default when it isn't installed.</summary>
+        internal static Font CaptionFont(string family, float px)
+        {
+            try
+            {
+                using (var f = new FontFamily(family))
+                    foreach (var style in new[] { FontStyle.Regular, FontStyle.Bold, FontStyle.Italic, FontStyle.Bold | FontStyle.Italic })
+                        if (f.IsStyleAvailable(style)) return new Font(f.Name, px, style, GraphicsUnit.Pixel);
+            }
+            catch (ArgumentException) { /* not installed */ }
+            return new Font(PopupText.DefaultFont, px, GraphicsUnit.Pixel);
         }
 
         // ---------------- window plumbing ----------------
@@ -191,13 +206,28 @@ namespace StandMate.UI
             }
         }
 
+        private const TextFormatFlags CaptionFlags =
+            TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.Left;
+
         private Size ComputeLayout(int logicalWidth)
         {
             int w = (int)Math.Round(logicalWidth * _scale);
             int pad = (int)Math.Round(6 * _scale);
-            int capH = (int)Math.Round(36 * _scale);
+            bool hasImage = _image != null && _image.Width > 0 && _image.Height > 0;
 
-            if (_image != null && _image.Width > 0 && _image.Height > 0)
+            // Caption: kanji, then the text, wrapped onto more lines when it doesn't fit (big fonts, narrow popups).
+            int gap = (int)Math.Round(8 * _scale);
+            var kSize = TextRenderer.MeasureText(_kanji, _kanjiFont, Size.Empty, TextFormatFlags.NoPadding);
+            int hintW = _kind == PopupKind.Placement ? TextRenderer.MeasureText(PlacementHint, _hintFont).Width + gap : 0;
+            int textX = pad + gap / 2 + kSize.Width + gap;
+            int textW = Math.Max(1, w - pad - textX - hintW);
+            var tSize = TextRenderer.MeasureText(_caption, _captionFont, new Size(textW, int.MaxValue), CaptionFlags);
+            int capH = Math.Max((int)Math.Round((hasImage ? 36 : 52) * _scale),
+                                Math.Max(tSize.Height, kSize.Height) + 2 * pad);
+            int capTop;
+            Size size;
+
+            if (hasImage)
             {
                 int iw = w - 2 * pad;
                 int ih = (int)Math.Round(iw * (double)_image.Height / _image.Width);
@@ -208,13 +238,21 @@ namespace StandMate.UI
                     iw = (int)Math.Round(ih * (double)_image.Width / _image.Height);
                 }
                 _imageRect = new Rectangle((w - iw) / 2, pad, iw, ih);
-                _captionRect = new Rectangle(pad, pad + ih, w - 2 * pad, capH);
-                return new Size(w, pad + ih + capH);
+                capTop = pad + ih;
+                size = new Size(w, pad + ih + capH);
+            }
+            else
+            {
+                _imageRect = Rectangle.Empty;
+                capTop = pad;
+                size = new Size(w, 2 * pad + capH);
             }
 
-            _imageRect = Rectangle.Empty;
-            _captionRect = new Rectangle(pad, pad, w - 2 * pad, (int)Math.Round(52 * _scale));
-            return new Size(w, 2 * pad + _captionRect.Height);
+            _captionRect = new Rectangle(pad, capTop, w - 2 * pad, capH);
+            _kanjiRect = new Rectangle(pad + gap / 2, capTop, kSize.Width, capH);
+            int textH = Math.Min(tSize.Height, capH);
+            _textRect = new Rectangle(textX, capTop + (capH - textH) / 2, textW, textH);
+            return size;
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -234,19 +272,13 @@ namespace StandMate.UI
 
             // 立 / 座 / 休 in the accent colour, then the caption.
             var r = _captionRect;
-            int gap = (int)Math.Round(8 * _scale);
-            var kSize = TextRenderer.MeasureText(g, _kanji, _kanjiFont, Size.Empty, TextFormatFlags.NoPadding);
-            var kRect = new Rectangle(r.Left + gap / 2, r.Top, kSize.Width, r.Height);
-            TextRenderer.DrawText(g, _kanji, _kanjiFont, kRect, Theme.Accent,
+            TextRenderer.DrawText(g, _kanji, _kanjiFont, _kanjiRect, Theme.Accent,
                 TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.NoPadding);
-
-            var tRect = new Rectangle(kRect.Right + gap, r.Top, r.Right - kRect.Right - gap, r.Height);
-            TextRenderer.DrawText(g, _caption, _captionFont, tRect, Theme.Text,
-                TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            TextRenderer.DrawText(g, _caption, _captionFont, _textRect, Theme.Text, CaptionFlags);
 
             if (_kind == PopupKind.Placement)
             {
-                string hint = "Esc to cancel";
+                string hint = PlacementHint;
                 var hs = TextRenderer.MeasureText(g, hint, _hintFont);
                 TextRenderer.DrawText(g, hint, _hintFont,
                     new Rectangle(r.Right - hs.Width, r.Top, hs.Width, r.Height), Theme.Muted,

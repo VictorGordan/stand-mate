@@ -11,7 +11,7 @@ namespace StandMate.UI
 {
     /// <summary>
     /// Tray icons drawn once at startup from a font glyph: 座 while sitting, 立 while standing, 休 on a break,
-    /// greyed out while paused/away. No image assets needed.
+    /// greyed out while paused/away, in the colours of the current theme. No image assets needed.
     /// </summary>
     internal sealed class TrayIcons : IDisposable
     {
@@ -34,36 +34,8 @@ namespace StandMate.UI
 
         public static Icon Make(string glyph, Color bg, Color fg, int size)
         {
-            using (var bmp = new Bitmap(size, size, PixelFormat.Format32bppArgb))
+            using (var bmp = Render(glyph, bg, fg, size))
             {
-                using (var g = Graphics.FromImage(bmp))
-                {
-                    g.SmoothingMode = SmoothingMode.AntiAlias;
-                    g.PixelOffsetMode = PixelOffsetMode.HighQuality;
-                    g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-                    g.Clear(Color.Transparent);
-                    using (var path = Theme.RoundedRect(new RectangleF(0, 0, size - 0.5f, size - 0.5f), size * 0.22f))
-                    using (var b = new SolidBrush(bg))
-                        g.FillPath(b, path);
-
-                    using (var family = new FontFamily(Theme.KanjiFontName))
-                    using (var glyphPath = new GraphicsPath())
-                    {
-                        glyphPath.AddString(glyph, family, (int)FontStyle.Bold, size * 0.8f, PointF.Empty, StringFormat.GenericTypographic);
-                        var gb = glyphPath.GetBounds();
-                        float target = size * 0.74f;
-                        float k = target / Math.Max(gb.Width, gb.Height);
-                        using (var m = new Matrix())
-                        {
-                            m.Translate(size / 2f, size / 2f);
-                            m.Scale(k, k);
-                            m.Translate(-(gb.X + gb.Width / 2f), -(gb.Y + gb.Height / 2f));
-                            glyphPath.Transform(m);
-                        }
-                        using (var b = new SolidBrush(fg))
-                            g.FillPath(b, glyphPath);
-                    }
-                }
                 IntPtr h = bmp.GetHicon();
                 try
                 {
@@ -75,6 +47,41 @@ namespace StandMate.UI
                     Native.DestroyIcon(h);
                 }
             }
+        }
+
+        /// <summary>The icon artwork: a rounded square in <paramref name="bg"/> with the glyph in <paramref name="fg"/>.</summary>
+        public static Bitmap Render(string glyph, Color bg, Color fg, int size)
+        {
+            var bmp = new Bitmap(size, size, PixelFormat.Format32bppArgb);
+            using (var g = Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+                g.Clear(Color.Transparent);
+                using (var path = Theme.RoundedRect(new RectangleF(0, 0, size - 0.5f, size - 0.5f), size * 0.22f))
+                using (var b = new SolidBrush(bg))
+                    g.FillPath(b, path);
+
+                using (var family = new FontFamily(Theme.KanjiFontName))
+                using (var glyphPath = new GraphicsPath())
+                {
+                    glyphPath.AddString(glyph, family, (int)FontStyle.Bold, size * 0.8f, PointF.Empty, StringFormat.GenericTypographic);
+                    var gb = glyphPath.GetBounds();
+                    float target = size * 0.74f;
+                    float k = target / Math.Max(gb.Width, gb.Height);
+                    using (var m = new Matrix())
+                    {
+                        m.Translate(size / 2f, size / 2f);
+                        m.Scale(k, k);
+                        m.Translate(-(gb.X + gb.Width / 2f), -(gb.Y + gb.Height / 2f));
+                        glyphPath.Transform(m);
+                    }
+                    using (var b = new SolidBrush(fg))
+                        g.FillPath(b, glyphPath);
+                }
+            }
+            return bmp;
         }
 
         public void Dispose()

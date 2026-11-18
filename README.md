@@ -100,12 +100,20 @@ existed) plays two default sounds and shows no GIF.
 
   Note: *On the clock* mode can't pause, so a reminder that pops up while you're away, waits for your input
 - **Fullscreen:** reminders show even while you're in a game or a fullscreen video. If you'd rather they wait until
-  it closes, turn on *Hold reminders until fullscreen apps close* (Settings › Popup)
+  it closes, turn on *Disable reminders when in fullscreen mode* (Settings › Popup). The timer keeps running, and a
+  reminder that comes due shows as soon as you leave fullscreen
 
 ### Popup placement
 
 Settings › Popup: pick the desired screen, a corner/edge from the 3×3 grid, or
-**Place by dragging…** to drag the popup anywhere (double-click to save); the size of the GIF and the volume of the sound are also adjustable here
+**Place by dragging…** to drag the popup anywhere (double-click to save); the size of the GIF, the font and size of
+the text, and the volume of the sound are also adjustable here
+
+### Themes
+
+Settings › Theme: **Sakura** (pink, the default), **Minty**, **Lavender**, **Sky** or **Amber**. The theme colours the
+settings window (and its icon in the title bar and taskbar), the popups, the menus and the tray icons. The icon of
+StandMate.exe itself, in Explorer and the Start menu, stays Sakura.
 
 ## Mates (your own GIFs and sound effects)
 
