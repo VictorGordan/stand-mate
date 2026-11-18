@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -9,8 +10,9 @@ using StandMate.Core;
 namespace StandMate.Platform
 {
     /// <summary>
-    /// The only network code in StandMate. It runs solely when the user presses "Check for updates" / "Update now":
-    /// it downloads latest.json + its signature from the project's GitHub releases and, if asked, the installer.
+    /// The only network code in StandMate. It runs solely when the user presses "Check for updates" / "Update now" or
+    /// opens the version list: it downloads latest.json + its signature from the project's GitHub releases (or the
+    /// list of releases from GitHub's API) and, if asked, the installer.
     /// Nothing about the user or this PC is sent: just a plain HTTPS GET with a generic User-Agent.
     /// </summary>
     internal static class UpdateClient
@@ -46,18 +48,49 @@ namespace StandMate.Platform
         private static string ManifestUrl => FeedOverride ??
             $"https://github.com/{Repo}/releases/latest/download/latest.json";
 
+        /// <summary>Going back needs the real GitHub releases (not a --update-url test feed).</summary>
+        public static bool CanGoBack => Repo != null && FeedOverride == null;
+
         /// <summary>Downloads and verifies latest.json. Throws <see cref="UpdateException"/> with a readable message.</summary>
         public static UpdateManifest FetchManifest(CancellationToken ct)
         {
             if (!IsConfigured) throw new UpdateException("Updates aren't set up in this build.");
-            byte[] manifest = Get(ManifestUrl, Updates.MaxManifestBytes, null, ct);
-            byte[] sig = Get(ManifestUrl + ".sig", 16 * 1024, null, ct);
+            return FetchManifest(ManifestUrl, FeedOverride != null, "No release has been published yet.", ct);
+        }
+
+        /// <summary>
+        /// The signed latest.json published with release v<paramref name="version"/>, for going back to it. Its signature
+        /// and its version must match, like for an update.
+        /// </summary>
+        public static UpdateManifest FetchManifest(Version version, CancellationToken ct)
+        {
+            if (!CanGoBack) throw new UpdateException("Going back to older versions isn't available in this build.");
+            var m = FetchManifest($"https://github.com/{Repo}/releases/download/v{version}/latest.json", false,
+                $"Version {version} can't be installed from here.", ct);
+            if (Updates.ParseVersion(m.Version) != version)
+                throw new UpdateException($"The files published for {version} are for another version, so they were ignored.");
+            return m;
+        }
+
+        /// <summary>The published releases (GitHub's API; only tags and flags are read).</summary>
+        public static List<ReleaseInfo> ListReleases(CancellationToken ct)
+        {
+            if (!CanGoBack) throw new UpdateException("Going back to older versions isn't available in this build.");
+            byte[] data = Get($"https://api.github.com/repos/{Repo}/releases?per_page=100", Updates.MaxReleaseListBytes, null, ct,
+                accept: "application/vnd.github+json", notFound: "No release has been published yet.");
+            return Updates.ParseReleases(data) ?? throw new UpdateException("GitHub's list of versions couldn't be read.");
+        }
+
+        private static UpdateManifest FetchManifest(string url, bool allowHttp, string notFound, CancellationToken ct)
+        {
+            byte[] manifest = Get(url, Updates.MaxManifestBytes, null, ct, notFound: notFound);
+            byte[] sig = Get(url + ".sig", 16 * 1024, null, ct, notFound: notFound);
 
             if (!Updates.VerifySignature(manifest, System.Text.Encoding.ASCII.GetString(sig), ReleaseKey.PublicKeyXml))
                 throw new UpdateException("The update information isn't signed by StandMate's release key, so it was ignored.");
 
             var m = Updates.ParseManifest(manifest);
-            string problem = Updates.Validate(m, allowHttp: FeedOverride != null);
+            string problem = Updates.Validate(m, allowHttp);
             if (problem != null) throw new UpdateException(problem);
             return m;
         }
@@ -82,12 +115,14 @@ namespace StandMate.Platform
         }
 
         /// <summary>GET with a size cap. Returns the bytes, or streams them into <paramref name="sink"/>.</summary>
-        private static byte[] Get(string url, long maxBytes, Stream sink, CancellationToken ct, Action<int> progress = null)
+        private static byte[] Get(string url, long maxBytes, Stream sink, CancellationToken ct, Action<int> progress = null,
+            string accept = null, string notFound = "No release has been published yet.")
         {
             try
             {
                 var req = (HttpWebRequest)WebRequest.Create(url);
                 req.UserAgent = "StandMate/" + CurrentVersion;
+                if (accept != null) req.Accept = accept;
                 req.Timeout = TimeoutMs;
                 req.ReadWriteTimeout = TimeoutMs;
                 req.AllowAutoRedirect = true;      // GitHub release links redirect to its download host
@@ -122,7 +157,7 @@ namespace StandMate.Platform
             catch (WebException ex)
             {
                 if (ex.Response is HttpWebResponse r && r.StatusCode == HttpStatusCode.NotFound)
-                    throw new UpdateException("No release has been published yet.");
+                    throw new UpdateException(notFound);
                 throw new UpdateException("Couldn't reach GitHub. Check your connection and try again.");
             }
             catch (IOException)

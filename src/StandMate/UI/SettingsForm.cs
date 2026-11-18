@@ -28,6 +28,11 @@ namespace StandMate.UI
         private Panel _sidebar, _content;
         private Label _status;
         private Label _updateLabel;
+        private ComboBox _versionCombo;
+        private bool _fillingVersions;
+        private bool _shownListing;
+        private List<Version> _shownVersions;
+        private UpdateStage _shownStage;
         private string _page = Pages[0];
 
         public SettingsForm(IAppHost host, string page = null)
@@ -748,7 +753,7 @@ namespace StandMate.UI
             col.Controls.Add(new Label { Text = "About", Font = _ui.Semibold, ForeColor = Theme.Text, AutoSize = true, Margin = _ui.P(0, 14, 0, 6) });
             col.Controls.Add(_ui.Paragraph(
                 "No telemetry, no accounts. StandMate only goes online when you press Check for updates or Update now, " +
-                "and then only to download from its GitHub releases.", ContentWidth));
+                "or open the version list, and then only to download from its GitHub releases.", ContentWidth));
             col.Controls.Add(_ui.Paragraph(
                 "Away detection only asks Windows when the last input happened. It never sees which keys you press " +
                 "or where your mouse is, and nothing is recorded.", ContentWidth));
@@ -769,12 +774,36 @@ namespace StandMate.UI
                 action = _ui.Button("Check for updates", (o, e) => u.Check());
             action.Enabled = !u.Busy;
 
-            _updateLabel = _ui.Label(u.Stage == UpdateStage.Idle ? $"Version {u.Current}" : u.Message, muted: true);
-            _updateLabel.MaximumSize = new Size(_ui.S(ContentWidth - 170), 0);
-            var row = _ui.Row(action, _updateLabel);
+            // The version in use; opening it lists older releases to go back to (fetched only then).
+            _versionCombo = _ui.Combo(140);
+            _versionCombo.DropDownWidth = _ui.S(230);
+            _versionCombo.Enabled = !u.Busy || u.Listing;
+            _versionCombo.DropDown += (o, e) =>
+            {
+                if (u.OlderVersions == null && !u.Busy && u.CanGoBack) u.ListOlderVersions();
+            };
+            _versionCombo.SelectedIndexChanged += (o, e) =>
+            {
+                if (_fillingVersions || _versionCombo.SelectedIndex <= 0) return;
+                int i = _versionCombo.SelectedIndex - 1;
+                var versions = u.OlderVersions;
+                BeginInvoke(new Action(() =>
+                {
+                    if (IsDisposed || _versionCombo.IsDisposed) return;
+                    FillVersionCombo(); // the box always shows the version in use
+                    if (versions != null && i < versions.Count) ConfirmRevert(versions[i]);
+                }));
+            };
+            FillVersionCombo();
+
+            var row = _ui.Row(action, _versionCombo);
             if (u.Stage == UpdateStage.Downloading)
                 row.Controls.Add(_ui.Button("Cancel", (o, e) => u.Cancel()));
             col.Controls.Add(row);
+
+            _updateLabel = _ui.Paragraph(u.Stage == UpdateStage.Idle ? "" : u.Message, ContentWidth, 6);
+            _updateLabel.Visible = u.Stage != UpdateStage.Idle;
+            col.Controls.Add(_updateLabel);
 
             if (u.Stage == UpdateStage.Available)
             {
@@ -789,13 +818,66 @@ namespace StandMate.UI
             }
         }
 
+        /// <summary>"Version x.y.z" first, then the older versions (or what's going on with fetching them).</summary>
+        private void FillVersionCombo()
+        {
+            var u = _host.Updater;
+            _fillingVersions = true;
+            try
+            {
+                _versionCombo.BeginUpdate();
+                _versionCombo.Items.Clear();
+                _versionCombo.Items.Add($"Version {u.Current}");
+                if (!u.CanGoBack) _versionCombo.Items.Add("Going back isn't available in this build");
+                else if (u.Listing) _versionCombo.Items.Add("Looking for older versions…");
+                else if (u.OlderVersions?.Count == 0) _versionCombo.Items.Add("No older versions");
+                else if (u.OlderVersions != null)
+                    foreach (var v in u.OlderVersions) _versionCombo.Items.Add($"Go back to {v}");
+                _versionCombo.SelectedIndex = 0;
+                _versionCombo.EndUpdate();
+            }
+            finally { _fillingVersions = false; }
+            _shownListing = u.Listing;
+            _shownVersions = u.OlderVersions;
+            _shownStage = u.Stage;
+        }
+
+        private void ConfirmRevert(Version version)
+        {
+            var u = _host.Updater;
+            if (IsDisposed || u.Busy) return;
+            var answer = MessageBox.Show(this,
+                $"Install StandMate {version} in place of {u.Current}? Your settings and mates are kept.\r\n\r\n" +
+                "Back up your current settings and mates first? Then, when you update to " +
+                $"{u.Current} or newer again, whatever {version} doesn't know about (like breaks) comes back. " +
+                $"Changes you make in {version} carry over either way.\r\n\r\n" +
+                "Yes: back up, then install\r\nNo: install without a backup",
+                "Go back to an older version", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question,
+                MessageBoxDefaultButton.Button1);
+            if (answer == DialogResult.Cancel) return;
+            u.Revert(version, backup: answer == DialogResult.Yes);
+        }
+
         private void OnUpdateChanged()
         {
             if (IsDisposed || _page != "General") return;
-            // Progress ticks only change the text; anything else rebuilds the page (buttons change).
-            if (_host.Updater.Stage == UpdateStage.Downloading && _updateLabel != null && !_updateLabel.IsDisposed &&
+            var u = _host.Updater;
+            // Progress ticks only change the text; the version list fills in place (it may be open);
+            // anything else rebuilds the page (buttons change).
+            if (u.Stage == UpdateStage.Downloading && _updateLabel != null && !_updateLabel.IsDisposed &&
                 _updateLabel.Text.StartsWith("Downloading", StringComparison.Ordinal))
-                _updateLabel.Text = _host.Updater.Message;
+                _updateLabel.Text = u.Message;
+            else if (u.Stage == _shownStage && _versionCombo != null && !_versionCombo.IsDisposed &&
+                     (u.Listing != _shownListing || !ReferenceEquals(u.OlderVersions, _shownVersions)))
+            {
+                bool open = _versionCombo.DroppedDown;
+                FillVersionCombo();
+                if (open)
+                {
+                    _versionCombo.DroppedDown = false; // reopen so the list fits its new items
+                    _versionCombo.DroppedDown = true;
+                }
+            }
             else
                 RefreshPage();
         }

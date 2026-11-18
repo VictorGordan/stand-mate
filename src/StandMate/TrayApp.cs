@@ -42,6 +42,12 @@ namespace StandMate
         public TrayApp(bool background, bool fast, EventWaitHandle showSignal)
         {
             _fast = fast;
+
+            // Back from an older version: put back what it didn't keep (from the backup made when going back to it).
+            bool restoredBackup = false;
+            try { restoredBackup = SettingsBackup.RestoreDue(Settings.DataDir, UpdateClient.CurrentVersion).Count > 0; }
+            catch (Exception ex) { Program.LogError(ex); }
+
             _settings = Settings.Load();
 
             // Each bundled mate is copied into the user's mates once (1.0–1.1 only had a yes/no flag, but the mates
@@ -89,6 +95,7 @@ namespace StandMate
             bool reopenSettings = false;
             if (!ContinueAfterUpdate(ref reopenSettings))
                 FreshStart(); // startup counts as a fresh start too
+            if (restoredBackup) _updates.ShowBackupRestored();
 
             if (!background || reopenSettings) ShowSettings(reopenSettings ? "General" : null);
             else TrimSoon();
@@ -117,9 +124,26 @@ namespace StandMate
             return true;
         }
 
-        /// <summary>The verified installer is ready: save everything, hand the timer over, run setup and exit.</summary>
-        private void InstallUpdate(string installerPath)
+        /// <summary>
+        /// The verified installer is ready: save everything (and back it up first if going back to an older version
+        /// and the user asked for it), hand the timer over, run setup and exit.
+        /// </summary>
+        private void InstallUpdate(string installerPath, bool backupFirst)
         {
+            _saveTimer.Stop();
+            _settings.Save();
+            if (backupFirst)
+            {
+                try { SettingsBackup.Create(Settings.DataDir, UpdateClient.CurrentVersion); }
+                catch (Exception ex)
+                {
+                    Program.LogError(ex);
+                    try { System.IO.Directory.Delete(System.IO.Path.Combine(SettingsBackup.Root(Settings.DataDir), UpdateClient.CurrentVersion.ToString()), true); }
+                    catch (Exception) { }
+                    _updates.InstallAborted("Your settings couldn't be backed up, so the older version wasn't installed.");
+                    return;
+                }
+            }
             try
             {
                 var now = DateTime.UtcNow;
@@ -147,6 +171,7 @@ namespace StandMate
                 try { System.IO.File.Delete(Handover.FilePath); } catch (Exception) { }
                 MessageBox.Show("The update couldn't be started. Try again, or install it manually from the download page.",
                     "StandMate", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                _updates.InstallAborted("The update couldn't be started.");
                 return;
             }
             Quit();

@@ -33,6 +33,8 @@ number and the release notes with the user first.
    - It then creates the GitHub release `vX.Y.Z` with those three files.
    - The app reads `https://github.com/<UpdateRepo>/releases/latest/download/latest.json`, so the newest release must
      always contain all three files.
+   - Going back to an older version (Settings › General › version list) reads `releases/download/vX.Y.Z/latest.json`
+     (+ `.sig`) of that release. Don't delete or replace old releases' files, and keep tags as `vX.Y.Z`.
 5. **Tell the user** the release URL.
 
 ### winget (package `VictorGordan.StandMate`)

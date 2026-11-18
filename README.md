@@ -53,6 +53,12 @@ silently and brings StandMate straight back. Settings and mates are always kept.
 (e.g. 1.2 → 1.3) the running timer carries on as well: *7 min of standing left* is still 7 min afterwards. A major
 update (e.g. 1.x → 2.0) starts the timer fresh.
 
+To go back to an older version, open the **Version x.y.z** list next to *Check for updates* and pick one. It's checked
+and installed the same way as an update. First you're asked whether to back up your settings and mates (into
+`%APPDATA%\StandMate\backups\`). Older versions drop what they don't know about when they save, like the break
+settings; with a backup, those come back as soon as you update to the version you left (or a newer one). Changes you
+make in the older version to settings both versions have carry over either way.
+
 ### Modes
 
 | Mode | How it cycles |
@@ -131,8 +137,9 @@ Away detection uses only the Windows function `GetLastInputInfo`, which returns 
 hooks, uses no raw input, and records nothing. Errors, if any, go to a local `error.log` in the settings folder.
 
 Network: the only network code is the update check (`src/StandMate/Platform/UpdateClient.cs`), and it runs only when
-you press *Check for updates* or *Update now*. It makes plain HTTPS downloads from the project's GitHub releases with a
-generic `StandMate/<version>` user agent, and sends nothing about you or your PC.
+you press *Check for updates* or *Update now*, or open the version list. It makes plain HTTPS downloads from the
+project's GitHub releases (and, for the version list, GitHub's public list of releases) with a generic
+`StandMate/<version>` user agent, and sends nothing about you or your PC.
 
 ## Building from source
 

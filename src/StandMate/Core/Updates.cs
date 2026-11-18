@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Runtime.Serialization;
 using System.Security.Cryptography;
 using System.Text;
@@ -20,11 +22,37 @@ namespace StandMate.Core
         [DataMember(Name = "notes")] public string Notes;      // shown in Settings › General
     }
 
+    /// <summary>One entry of GitHub's release list (api.github.com/repos/…/releases); everything else is ignored.</summary>
+    [DataContract]
+    public sealed class ReleaseInfo
+    {
+        [DataMember(Name = "tag_name")] public string Tag;
+        [DataMember(Name = "draft")] public bool Draft;
+        [DataMember(Name = "prerelease")] public bool Prerelease;
+    }
+
     /// <summary>Pure update logic: versions, signature and hash checks. The network part is in Platform/UpdateClient.</summary>
     public static class Updates
     {
         public const long MaxManifestBytes = 64 * 1024;
         public const long MaxInstallerBytes = 50L * 1024 * 1024;
+        public const long MaxReleaseListBytes = 8L * 1024 * 1024;
+
+        /// <summary>Published versions older than <paramref name="current"/>, newest first (drafts and pre-releases left out).</summary>
+        public static List<Version> OlderVersions(IEnumerable<ReleaseInfo> releases, Version current) =>
+            (releases ?? Enumerable.Empty<ReleaseInfo>())
+                .Where(r => r != null && !r.Draft && !r.Prerelease)
+                .Select(r => ParseVersion(r.Tag))
+                .Where(v => v != null && IsNewer(v, current))
+                .Distinct()
+                .OrderByDescending(v => v)
+                .ToList();
+
+        public static List<ReleaseInfo> ParseReleases(byte[] data)
+        {
+            try { return data == null ? null : Json.Parse<List<ReleaseInfo>>(data); }
+            catch (Exception) { return null; }
+        }
 
         /// <summary>Parses "1.2", "1.2.3" or "v1.2.3" into a three-part version; null when it isn't one.</summary>
         public static Version ParseVersion(string text)
