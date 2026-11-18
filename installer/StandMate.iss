@@ -3,7 +3,7 @@
 
 #define AppName "StandMate"
 #ifndef AppVersion
-  #define AppVersion "1.2.2"
+  #define AppVersion "1.3.0"
 #endif
 ; Shown in Settings > Apps; winget's validation compares these with the package manifest.
 #define AppPublisher "Victor Gordan"
